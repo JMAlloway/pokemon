@@ -8,15 +8,26 @@ class ApiError extends Error {
 
 async function request(method, url, body = null) {
   const headers = { 'Content-Type': 'application/json' };
-  const config = { method, headers };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 35000);
+  const config = { method, headers, signal: controller.signal };
   if (body) config.body = JSON.stringify(body);
 
-  const response = await fetch(url, config);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new ApiError(data.error || 'Request failed', response.status, data);
+  try {
+    const response = await fetch(url, config);
+    clearTimeout(timeout);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new ApiError(data.error || 'Request failed', response.status, data);
+    }
+    return data;
+  } catch (error) {
+    clearTimeout(timeout);
+    if (error.name === 'AbortError') {
+      throw new ApiError('Request timed out. Please try again.', 408);
+    }
+    throw error;
   }
-  return data;
 }
 
 export const api = {

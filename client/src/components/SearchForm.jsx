@@ -54,7 +54,7 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!cardName.trim()) return;
+    if (!cardName.trim() || isSearching) return;
     setShowSuggestions(false);
     onSearch({
       cardName: cardName.trim(),
