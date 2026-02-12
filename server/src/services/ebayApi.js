@@ -294,8 +294,9 @@ export async function searchListings({ cardName, set, rarity, condition, limit =
   }
 
   try {
-    const data = await withRetry(() =>
-      ebayFetch(`/buy/browse/v1/item_summary/search?${params.toString()}`)
+    const data = await withRetry(
+      () => ebayFetch(`/buy/browse/v1/item_summary/search?${params.toString()}`),
+      2 // Only 2 attempts for interactive searches to avoid long hangs
     );
 
     if (!data) {

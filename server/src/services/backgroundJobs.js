@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '../db.js';
-import { searchListings, searchSoldListings, checkListingStatus, getRateLimitStatus } from './ebayApi.js';
+import { searchListings, checkListingStatus, getRateLimitStatus } from './ebayApi.js';
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
 
@@ -108,25 +108,34 @@ export async function executeSearch(searchQuery) {
       condition: searchQuery.condition
     });
 
-    // 2. Get sold listings for baseline pricing
-    const soldListings = await searchSoldListings({
-      cardName: searchQuery.cardName,
-      set: searchQuery.set,
-      days: 90
+    // 2. Derive baseline pricing from active listings (avoids a duplicate API call)
+    //    Convert active listing prices into the soldListings format for baseline calculation
+    const pricePoints = listings
+      .filter(l => l.currentPrice > 0)
+      .map(l => ({
+        soldPrice: l.currentPrice,
+        soldAt: new Date() // active listings treated as current market data
+      }));
+
+    // Also check DB for any previously stored sold listings
+    const storedSold = await prisma.recentSoldListing.findMany({
+      where: { cardName: searchQuery.cardName },
+      orderBy: { soldAt: 'desc' },
+      take: 100
     });
 
-    // 3. Store/update sold listings in DB
-    if (soldListings.length > 0) {
-      await storeSoldListings(soldListings, searchQuery.cardName, searchQuery.set);
-    }
+    const allPriceData = [
+      ...storedSold.map(s => ({ soldPrice: Number(s.soldPrice), soldAt: s.soldAt })),
+      ...pricePoints
+    ];
 
-    // 4. Calculate recency-weighted baseline
-    const baseline = calculateRecencyWeightedBaseline(soldListings);
+    // 3. Calculate recency-weighted baseline
+    const baseline = calculateRecencyWeightedBaseline(allPriceData);
 
-    // 5. Analyze listings for typos
+    // 4. Analyze listings for typos
     const analyzedListings = batchAnalyzeTitles(listings, searchQuery.cardName);
 
-    // 6. Remove old sample data for this search if we got real results
+    // 5. Remove old sample data for this search if we got real results
     const hasRealListings = analyzedListings.some(l => !l.ebayListingId.startsWith('ebay_'));
     if (hasRealListings) {
       const deleted = await prisma.ebayListing.deleteMany({
@@ -140,7 +149,7 @@ export async function executeSearch(searchQuery) {
       }
     }
 
-    // 7. Calculate deal scores and store listings
+    // 6. Calculate deal scores and store listings
     let storedCount = 0;
     for (const listing of analyzedListings) {
       const priceGapPercent = baseline.weightedPrice
@@ -197,13 +206,13 @@ export async function executeSearch(searchQuery) {
       storedCount++;
     }
 
-    // 8. Update search query timestamp
+    // 7. Update search query timestamp
     await prisma.searchQuery.update({
       where: { id: searchQuery.id },
       data: { lastExecutedAt: new Date() }
     });
 
-    // 9. Complete job log
+    // 8. Complete job log
     await prisma.backgroundJobLog.update({
       where: { id: jobLog.id },
       data: {
