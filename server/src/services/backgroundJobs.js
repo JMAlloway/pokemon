@@ -91,6 +91,8 @@ async function runScheduledSearches(frequency) {
  * Can be called from background job or manual trigger.
  */
 export async function executeSearch(searchQuery) {
+  console.log(`[BackgroundJobs] Starting search for "${searchQuery.cardName}"`);
+
   const jobLog = await prisma.backgroundJobLog.create({
     data: {
       searchQueryId: searchQuery.id,
@@ -107,22 +109,27 @@ export async function executeSearch(searchQuery) {
       rarity: searchQuery.rarity,
       condition: searchQuery.condition
     });
+    console.log(`[BackgroundJobs] Got ${listings.length} listings for "${searchQuery.cardName}"`);
 
     // 2. Derive baseline pricing from active listings (avoids a duplicate API call)
-    //    Convert active listing prices into the soldListings format for baseline calculation
     const pricePoints = listings
       .filter(l => l.currentPrice > 0)
       .map(l => ({
         soldPrice: l.currentPrice,
-        soldAt: new Date() // active listings treated as current market data
+        soldAt: new Date()
       }));
 
     // Also check DB for any previously stored sold listings
-    const storedSold = await prisma.recentSoldListing.findMany({
-      where: { cardName: searchQuery.cardName },
-      orderBy: { soldAt: 'desc' },
-      take: 100
-    });
+    let storedSold = [];
+    try {
+      storedSold = await prisma.recentSoldListing.findMany({
+        where: { cardName: searchQuery.cardName },
+        orderBy: { soldAt: 'desc' },
+        take: 100
+      });
+    } catch (dbErr) {
+      console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
+    }
 
     const allPriceData = [
       ...storedSold.map(s => ({ soldPrice: Number(s.soldPrice), soldAt: s.soldAt })),
@@ -222,6 +229,8 @@ export async function executeSearch(searchQuery) {
       }
     });
 
+    console.log(`[BackgroundJobs] Search complete for "${searchQuery.cardName}": ${storedCount} listings stored, baseline=$${baseline.weightedPrice}`);
+
     return {
       success: true,
       listingsFound: storedCount,
@@ -230,7 +239,7 @@ export async function executeSearch(searchQuery) {
       sampleSize: baseline.sampleSize
     };
   } catch (error) {
-    console.error(`[BackgroundJobs] Search failed for ${searchQuery.cardName}:`, error.message);
+    console.error(`[BackgroundJobs] Search failed for "${searchQuery.cardName}":`, error.message, error.stack);
 
     await prisma.backgroundJobLog.update({
       where: { id: jobLog.id },

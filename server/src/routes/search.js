@@ -10,8 +10,10 @@ const router = Router();
 
 // POST /api/search — Execute a manual search
 router.post('/', validateSearchQuery, async (req, res) => {
+  const startTime = Date.now();
   try {
     const { cardName, set, rarity, condition } = req.body;
+    console.log(`[Search] POST /api/search for "${cardName}"`);
 
     // Check rate limit
     const rl = getRateLimitStatus();
@@ -55,8 +57,14 @@ router.post('/', validateSearchQuery, async (req, res) => {
       });
     }
 
-    // Execute search
-    const result = await executeSearch(searchQuery);
+    // Execute search with a 30-second timeout to prevent hanging
+    const searchTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Search timed out after 30 seconds')), 30000)
+    );
+    const result = await Promise.race([
+      executeSearch(searchQuery),
+      searchTimeout
+    ]);
 
     if (!result.success) {
       // Check for cached results
@@ -97,6 +105,8 @@ router.post('/', validateSearchQuery, async (req, res) => {
       ]
     });
 
+    console.log(`[Search] Returning ${listings.length} listings for "${req.body.cardName}" (${Date.now() - startTime}ms)`);
+
     res.json({
       listings,
       baseline: result.baseline,
@@ -106,7 +116,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
       cached: false
     });
   } catch (error) {
-    console.error('Search error:', error);
+    console.error(`[Search] Error for "${req.body?.cardName}" after ${Date.now() - startTime}ms:`, error.message);
     res.status(500).json({ error: 'Search failed. Please try again.' });
   }
 });

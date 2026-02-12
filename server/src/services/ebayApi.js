@@ -226,17 +226,24 @@ async function ebayFetch(endpoint, options = {}) {
       tokenExpiresAt = 0;
       const newToken = await getOAuthToken();
       if (newToken) {
-        clearTimeout(timeoutId);
-        const retryResponse = await fetch(url, {
-          ...options,
-          headers: {
-            'Authorization': `Bearer ${newToken}`,
-            'Content-Type': 'application/json',
-            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-            ...options.headers
-          }
-        });
-        if (retryResponse.ok) return await retryResponse.json();
+        const retryController = new AbortController();
+        const retryTimeout = setTimeout(() => retryController.abort(), 10000);
+        try {
+          const retryResponse = await fetch(url, {
+            ...options,
+            signal: retryController.signal,
+            headers: {
+              'Authorization': `Bearer ${newToken}`,
+              'Content-Type': 'application/json',
+              'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+              ...options.headers
+            }
+          });
+          clearTimeout(retryTimeout);
+          if (retryResponse.ok) return await retryResponse.json();
+        } catch {
+          clearTimeout(retryTimeout);
+        }
       }
       const error = new Error('eBay API authentication failed');
       error.statusCode = 401;
