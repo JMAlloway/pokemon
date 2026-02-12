@@ -7,7 +7,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import prisma from './db.js';
 import { initializeBackgroundJobs } from './services/backgroundJobs.js';
-import authRoutes from './routes/auth.js';
 import searchRoutes from './routes/search.js';
 import savedSearchRoutes from './routes/savedSearches.js';
 import savedDealRoutes from './routes/savedDeals.js';
@@ -45,13 +44,6 @@ app.use('/api/', apiLimiter);
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
 
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/search', searchRoutes);
-app.use('/api/saved-searches', savedSearchRoutes);
-app.use('/api/saved-deals', savedDealRoutes);
-app.use('/api/listings', listingRoutes);
-
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -75,11 +67,41 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// Ensure a default user exists (single-user app, no login required)
+async function ensureDefaultUser() {
+  let user = await prisma.user.findFirst();
+  if (!user) {
+    const bcrypt = await import('bcrypt');
+    user = await prisma.user.create({
+      data: {
+        username: 'default',
+        email: 'default@pokearb.local',
+        password: await bcrypt.default.hash('not-used', 10)
+      }
+    });
+    console.log('Default user created');
+  }
+  return user;
+}
+
 // Start server
 async function start() {
   try {
     await prisma.$connect();
     console.log('Database connected');
+
+    // Ensure default user and inject userId into all API requests
+    const defaultUser = await ensureDefaultUser();
+    app.use('/api/', (req, _res, next) => {
+      req.userId = defaultUser.id;
+      next();
+    });
+
+    // Register API routes (after userId middleware)
+    app.use('/api/search', searchRoutes);
+    app.use('/api/saved-searches', savedSearchRoutes);
+    app.use('/api/saved-deals', savedDealRoutes);
+    app.use('/api/listings', listingRoutes);
 
     // Initialize background jobs
     initializeBackgroundJobs();

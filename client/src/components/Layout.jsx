@@ -1,10 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import useAuthStore from '../store/authStore';
 import useSavedDealsStore from '../store/savedDealsStore';
 import { useEffect } from 'react';
 
 export default function Layout() {
-  const { user, logout } = useAuthStore();
   const { notifications, fetchDeals } = useSavedDealsStore();
 
   useEffect(() => {
@@ -52,15 +50,6 @@ export default function Layout() {
               </NavLink>
             ))}
           </nav>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-text-muted">{user?.username}</span>
-          <button
-            onClick={logout}
-            className="text-sm text-text-secondary hover:text-text-primary transition-colors"
-          >
-            Sign out
-          </button>
         </div>
       </header>
       <main className="flex-1 overflow-auto">

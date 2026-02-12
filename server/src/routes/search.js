@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-import { authenticate } from '../middleware/auth.js';
+
 import { validateSearchQuery } from '../middleware/validate.js';
 import { executeSearch } from '../services/backgroundJobs.js';
 import { validateCardName, getAutocompleteSuggestions, getSetSuggestions } from '../services/pokemonTcg.js';
@@ -9,7 +9,7 @@ import { getRateLimitStatus } from '../services/ebayApi.js';
 const router = Router();
 
 // POST /api/search — Execute a manual search
-router.post('/', authenticate, validateSearchQuery, async (req, res) => {
+router.post('/', validateSearchQuery, async (req, res) => {
   try {
     const { cardName, set, rarity, condition } = req.body;
 
@@ -112,7 +112,7 @@ router.post('/', authenticate, validateSearchQuery, async (req, res) => {
 });
 
 // GET /api/search/autocomplete?q=char
-router.get('/autocomplete', authenticate, (req, res) => {
+router.get('/autocomplete', (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) {
     return res.json({ suggestions: [] });
@@ -122,14 +122,14 @@ router.get('/autocomplete', authenticate, (req, res) => {
 });
 
 // GET /api/search/sets?q=base
-router.get('/sets', authenticate, (req, res) => {
+router.get('/sets', (req, res) => {
   const { q } = req.query;
   const suggestions = getSetSuggestions(q);
   res.json({ suggestions });
 });
 
 // GET /api/search/validate?cardName=Charizard
-router.get('/validate', authenticate, async (req, res) => {
+router.get('/validate', async (req, res) => {
   const { cardName } = req.query;
   if (!cardName) {
     return res.status(400).json({ error: 'Card name required' });
@@ -139,7 +139,7 @@ router.get('/validate', authenticate, async (req, res) => {
 });
 
 // GET /api/search/rate-limit
-router.get('/rate-limit', authenticate, (req, res) => {
+router.get('/rate-limit', (req, res) => {
   res.json(getRateLimitStatus());
 });
 

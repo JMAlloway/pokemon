@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-import { authenticate } from '../middleware/auth.js';
+
 import { validateSearchQuery } from '../middleware/validate.js';
 import { executeSearch } from '../services/backgroundJobs.js';
 import { validateCardName } from '../services/pokemonTcg.js';
@@ -9,7 +9,7 @@ import { getRateLimitStatus } from '../services/ebayApi.js';
 const router = Router();
 
 // GET /api/saved-searches — List all saved searches for user
-router.get('/', authenticate, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const searches = await prisma.searchQuery.findMany({
       where: { userId: req.userId },
@@ -47,7 +47,7 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // POST /api/saved-searches — Create a new saved search
-router.post('/', authenticate, validateSearchQuery, async (req, res) => {
+router.post('/', validateSearchQuery, async (req, res) => {
   try {
     const { cardName, set, rarity, condition, searchFrequency, priceThresholdPercent } = req.body;
 
@@ -92,7 +92,7 @@ router.post('/', authenticate, validateSearchQuery, async (req, res) => {
 });
 
 // PUT /api/saved-searches/:id — Update a saved search
-router.put('/:id', authenticate, validateSearchQuery, async (req, res) => {
+router.put('/:id', validateSearchQuery, async (req, res) => {
   try {
     const { id } = req.params;
     const { cardName, set, rarity, condition, searchFrequency, priceThresholdPercent } = req.body;
@@ -138,7 +138,7 @@ router.put('/:id', authenticate, validateSearchQuery, async (req, res) => {
 });
 
 // DELETE /api/saved-searches/:id — Delete a saved search
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -160,7 +160,7 @@ router.delete('/:id', authenticate, async (req, res) => {
 });
 
 // POST /api/saved-searches/:id/run — Manually trigger a saved search
-router.post('/:id/run', authenticate, async (req, res) => {
+router.post('/:id/run', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -217,7 +217,7 @@ router.post('/:id/run', authenticate, async (req, res) => {
 });
 
 // GET /api/saved-searches/:id/listings — Get listings for a saved search
-router.get('/:id/listings', authenticate, async (req, res) => {
+router.get('/:id/listings', async (req, res) => {
   try {
     const { id } = req.params;
     const { status = 'active', sort = 'dealScore', order = 'desc' } = req.query;

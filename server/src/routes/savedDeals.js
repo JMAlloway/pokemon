@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-import { authenticate } from '../middleware/auth.js';
+
 
 const router = Router();
 
 // GET /api/saved-deals — Get all saved deals for user
-router.get('/', authenticate, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { sort = 'savedAt', order = 'desc', status = 'active' } = req.query;
 
@@ -93,7 +93,7 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // POST /api/saved-deals — Save a listing to deals
-router.post('/', authenticate, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { ebayListingId } = req.body;
 
@@ -149,7 +149,7 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 // DELETE /api/saved-deals/:id — Remove a saved deal
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -171,7 +171,7 @@ router.delete('/:id', authenticate, async (req, res) => {
 });
 
 // GET /api/saved-deals/:id — Get single saved deal details
-router.get('/:id', authenticate, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 

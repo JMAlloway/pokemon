@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-import { authenticate } from '../middleware/auth.js';
+
 
 const router = Router();
 
 // GET /api/listings/:ebayListingId — Get full listing details
-router.get('/:ebayListingId', authenticate, async (req, res) => {
+router.get('/:ebayListingId', async (req, res) => {
   try {
     const { ebayListingId } = req.params;
 
