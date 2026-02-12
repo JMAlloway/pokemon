@@ -88,9 +88,11 @@ async function start() {
       console.log(`Server running on http://localhost:${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 
-      if (!process.env.EBAY_OAUTH_TOKEN) {
+      if (!process.env.EBAY_APP_ID || !process.env.EBAY_CERT_ID) {
         console.log('Note: No eBay API credentials configured. Using sample data for development.');
-        console.log('Set EBAY_APP_ID, EBAY_CERT_ID, and EBAY_OAUTH_TOKEN in .env for live data.');
+        console.log('Set EBAY_APP_ID and EBAY_CERT_ID in .env for live eBay data.');
+      } else {
+        console.log(`eBay API: ${process.env.EBAY_ENVIRONMENT || 'sandbox'} environment`);
       }
     });
   } catch (error) {
