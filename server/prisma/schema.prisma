@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(uuid()) @db.Uuid
+  username     String         @unique @db.VarChar(100)
+  email        String         @unique
+  password     String
+  createdAt    DateTime       @default(now())
+  lastActiveAt DateTime       @default(now())
+  savedListings SavedListing[]
+  searchQueries SearchQuery[]
+}
+
+model SearchQuery {
+  id                    String          @id @default(uuid()) @db.Uuid
+  userId                String          @db.Uuid
+  cardName              String          @db.VarChar(255)
+  set                   String?         @db.VarChar(100)
+  rarity                Rarity?
+  condition             Condition?
+  searchFrequency       SearchFrequency @default(manual)
+  priceThresholdPercent Decimal?        @db.Decimal(5, 2)
+  recencyScoringEnabled Boolean         @default(true)
+  lastExecutedAt        DateTime?
+  createdAt             DateTime        @default(now())
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ebayListings          EbayListing[]
+  backgroundJobLogs     BackgroundJobLog[]
+
+  @@index([userId])
+  @@index([searchFrequency])
+}
+
+model EbayListing {
+  id                  String        @id @default(uuid()) @db.Uuid
+  ebayListingId       String        @unique
+  searchQueryId       String        @db.Uuid
+  cardName            String        @db.VarChar(255)
+  listingTitle        String        @db.VarChar(500)
+  currentPrice        Decimal       @db.Decimal(10, 2)
+  recentSoldPrice     Decimal?      @db.Decimal(10, 2)
+  priceGapPercent     Decimal?      @db.Decimal(6, 2)
+  hasTypo             Boolean       @default(false)
+  typoDetails         String?       @db.Text
+  typoConfidenceScore Decimal?      @db.Decimal(5, 2)
+  dealScore           Int?          @db.SmallInt
+  recencyScore        Decimal?      @db.Decimal(5, 2)
+  sellerName          String?       @db.VarChar(255)
+  sellerRating        Decimal?      @db.Decimal(3, 1)
+  sellerFeedbackPercent Decimal?    @db.Decimal(5, 2)
+  listingUrl          String
+  images              String[]
+  description         String?       @db.Text
+  condition           String?       @db.VarChar(50)
+  listingStatus       ListingStatus @default(active)
+  createdAt           DateTime      @default(now())
+  lastCheckedAt       DateTime      @default(now())
+  soldAt              DateTime?
+  searchQuery         SearchQuery   @relation(fields: [searchQueryId], references: [id], onDelete: Cascade)
+  savedListing        SavedListing?
+
+  @@index([searchQueryId])
+  @@index([ebayListingId])
+  @@index([listingStatus])
+  @@index([dealScore(sort: Desc)])
+}
+
+model SavedListing {
+  id                   String        @id @default(uuid()) @db.Uuid
+  userId               String        @db.Uuid
+  ebayListingId        String        @unique
+  priceAtSave          Decimal       @db.Decimal(10, 2)
+  recentSoldPriceAtSave Decimal?     @db.Decimal(10, 2)
+  dealScoreAtSave      Int?          @db.SmallInt
+  savedAt              DateTime      @default(now())
+  currentPrice         Decimal?      @db.Decimal(10, 2)
+  priceChangePercent   Decimal?      @db.Decimal(6, 2)
+  status               ListingStatus @default(active)
+  lastPriceCheckAt     DateTime?
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ebayListing          EbayListing   @relation(fields: [ebayListingId], references: [ebayListingId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model RecentSoldListing {
+  id            String   @id @default(uuid()) @db.Uuid
+  cardName      String   @db.VarChar(255)
+  set           String?  @db.VarChar(100)
+  rarity        String?  @db.VarChar(50)
+  condition     String?  @db.VarChar(50)
+  soldPrice     Decimal  @db.Decimal(10, 2)
+  soldAt        DateTime
+  daysOld       Int?     @db.SmallInt
+  source        String   @default("eBay") @db.VarChar(50)
+  lastUpdatedAt DateTime @default(now())
+
+  @@index([cardName])
+  @@index([soldAt])
+}
+
+model TypoPattern {
+  id                 String       @id @default(uuid()) @db.Uuid
+  correctSpelling    String       @db.VarChar(255)
+  commonMisspelling  String       @unique @db.VarChar(255)
+  category           TypoCategory?
+  levenshteinDistance Int          @db.SmallInt
+  createdAt          DateTime     @default(now())
+
+  @@index([correctSpelling])
+}
+
+model BackgroundJobLog {
+  id             String        @id @default(uuid()) @db.Uuid
+  searchQueryId  String        @db.Uuid
+  jobType        JobType
+  executedAt     DateTime      @default(now())
+  completedAt    DateTime?
+  status         JobStatus     @default(pending)
+  listingsFound  Int?
+  errorMessage   String?       @db.Text
+  retryCount     Int           @default(0)
+  searchQuery    SearchQuery   @relation(fields: [searchQueryId], references: [id], onDelete: Cascade)
+
+  @@index([searchQueryId])
+  @@index([status])
+}
+
+enum Rarity {
+  common
+  uncommon
+  rare
+  holoRare
+  other
+}
+
+enum Condition {
+  mint
+  nearMint
+  excellent
+  good
+  fair
+  poor
+}
+
+enum SearchFrequency {
+  manual
+  hourly
+  fourHourly
+  daily
+  weekly
+}
+
+enum ListingStatus {
+  active
+  sold
+  delisted
+}
+
+enum TypoCategory {
+  cardName
+  setName
+  rarity
+  condition
+}
+
+enum JobType {
+  eBaySearch
+  PriceBaseline
+  SavedDealsMonitoring
+}
+
+enum JobStatus {
+  pending
+  running
+  completed
+  failed
+  skipped
+}

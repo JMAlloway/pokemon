@@ -1,0 +1,186 @@
+import { useEffect, useState } from 'react';
+import DealScoreBadge from './DealScoreBadge';
+import TypoBadge from './TypoBadge';
+import SellerInfo from './SellerInfo';
+import { api } from '../utils/api';
+
+export default function ListingDetail({ listing, recentSoldListings: initialSold, onClose, onSave, saveStatus }) {
+  const [soldComps, setSoldComps] = useState(initialSold || []);
+  const [alsoFoundIn, setAlsoFoundIn] = useState([]);
+
+  useEffect(() => {
+    async function loadDetails() {
+      try {
+        const data = await api.get(`/api/listings/${listing.ebayListingId}`);
+        if (data.recentSoldListings) setSoldComps(data.recentSoldListings);
+        if (data.alsoFoundIn) setAlsoFoundIn(data.alsoFoundIn);
+      } catch {
+        // Use initial data
+      }
+    }
+    loadDetails();
+  }, [listing.ebayListingId]);
+
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  const gap = listing.priceGapPercent !== null ? Number(listing.priceGapPercent) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-end" role="dialog" aria-modal="true" aria-label="Listing details">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative w-full max-w-xl h-full bg-bg-secondary border-l border-border overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-bg-secondary border-b border-border p-4 flex items-center justify-between z-10">
+          <h2 className="text-lg font-bold text-text-primary truncate pr-4">{listing.cardName}</h2>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1.5 rounded-md hover:bg-bg-tertiary text-text-secondary"
+            aria-label="Close details"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {/* Images */}
+          {listing.images && listing.images.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {listing.images.map((img, i) => (
+                <img
+                  key={i}
+                  src={img}
+                  alt={`${listing.cardName} image ${i + 1}`}
+                  className="w-40 h-56 object-cover rounded-lg bg-bg-tertiary shrink-0"
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Score and flags */}
+          <div className="flex items-center gap-3">
+            <DealScoreBadge score={listing.dealScore} size="lg" />
+            <TypoBadge hasTypo={listing.hasTypo} details={listing.typoDetails} confidence={listing.typoConfidenceScore} />
+            {gap !== null && (
+              <span className={`text-sm font-bold ${gap > 0 ? 'text-deal-green' : gap < 0 ? 'text-price-up' : 'text-text-muted'}`}>
+                {gap > 0 ? `${gap.toFixed(1)}% below market` : gap < 0 ? `${Math.abs(gap).toFixed(1)}% above market` : 'At market price'}
+              </span>
+            )}
+          </div>
+
+          {/* Title and price */}
+          <div className="space-y-2">
+            <h3 className="text-sm text-text-secondary">{listing.listingTitle}</h3>
+            <div className="flex items-baseline gap-4">
+              <div>
+                <span className="text-2xl font-bold text-text-primary">${Number(listing.currentPrice).toFixed(2)}</span>
+                <span className="text-sm text-text-muted ml-1">current</span>
+              </div>
+              {listing.recentSoldPrice && (
+                <div>
+                  <span className="text-lg text-text-secondary">${Number(listing.recentSoldPrice).toFixed(2)}</span>
+                  <span className="text-sm text-text-muted ml-1">market avg</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Typo details */}
+          {listing.typoDetails && (
+            <div className="bg-typo-amber/10 border border-typo-amber/20 rounded-lg p-3">
+              <p className="text-sm text-typo-amber font-medium">Misspelling detected</p>
+              <p className="text-sm text-text-secondary mt-1">{listing.typoDetails}</p>
+            </div>
+          )}
+
+          {/* Seller info */}
+          <div className="bg-bg-card border border-border rounded-lg p-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">Seller</h4>
+            <SellerInfo
+              name={listing.sellerName}
+              rating={listing.sellerRating}
+              feedbackPercent={listing.sellerFeedbackPercent}
+            />
+          </div>
+
+          {/* Description */}
+          {listing.description && (
+            <div className="bg-bg-card border border-border rounded-lg p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">Description</h4>
+              <p className="text-sm text-text-secondary whitespace-pre-wrap">{listing.description}</p>
+            </div>
+          )}
+
+          {/* Recent sold comps */}
+          {soldComps.length > 0 && (
+            <div className="bg-bg-card border border-border rounded-lg p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-3">
+                Recent Sold Comps ({soldComps.length})
+              </h4>
+              <div className="space-y-2">
+                {soldComps.map((sold, i) => {
+                  const daysAgo = sold.daysOld || Math.floor((Date.now() - new Date(sold.soldAt).getTime()) / (1000 * 60 * 60 * 24));
+                  const recencyLabel = daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
+                  const recencyColor = daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
+
+                  return (
+                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-text-primary">${Number(sold.soldPrice).toFixed(2)}</span>
+                        <span className={`text-xs font-medium ${recencyColor}`}>{recencyLabel}</span>
+                      </div>
+                      <span className="text-xs text-text-muted">
+                        {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Also found in */}
+          {alsoFoundIn.length > 0 && (
+            <div className="bg-bg-card border border-border rounded-lg p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">Also found in</h4>
+              {alsoFoundIn.map((s, i) => (
+                <span key={i} className="inline-block text-xs bg-bg-tertiary text-text-secondary px-2 py-1 rounded mr-1 mb-1">
+                  {s.searchName}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-2">
+            <a
+              href={listing.listingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover transition-colors"
+            >
+              View on eBay
+            </a>
+            <button
+              onClick={onSave}
+              disabled={saveStatus === 'saved' || saveStatus === 'saving'}
+              className={`flex-1 py-2.5 rounded-lg font-medium transition-colors ${
+                saveStatus === 'saved'
+                  ? 'bg-deal-green/15 text-deal-green cursor-default'
+                  : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+              }`}
+            >
+              {saveStatus === 'saved' ? 'Saved to Deals' : saveStatus === 'saving' ? 'Saving...' : 'Save to Deals'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
