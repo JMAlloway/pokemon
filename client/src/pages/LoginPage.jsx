@@ -72,16 +72,16 @@ export default function LoginPage() {
 
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-1">
-                Email
+                {isRegister ? 'Email' : 'Username or Email'}
               </label>
               <input
                 id="email"
-                type="email"
+                type={isRegister ? 'email' : 'text'}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-bg-tertiary border border-border rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-muted focus:border-accent focus:ring-1 focus:ring-accent outline-none"
                 required
-                placeholder="you@example.com"
+                placeholder={isRegister ? 'you@example.com' : 'Username or email'}
               />
             </div>
 
