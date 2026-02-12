@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import prisma from './db.js';
 import { initializeBackgroundJobs } from './services/backgroundJobs.js';
+import ebayNotificationRoutes from './routes/ebayNotifications.js';
 import searchRoutes from './routes/search.js';
 import savedSearchRoutes from './routes/savedSearches.js';
 import savedDealRoutes from './routes/savedDeals.js';
@@ -43,6 +44,9 @@ app.use('/api/', apiLimiter);
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
+
+// eBay Marketplace Account Deletion notifications (must be publicly accessible)
+app.use('/api/ebay', ebayNotificationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
