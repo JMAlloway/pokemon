@@ -45,6 +45,14 @@ app.use('/api/', apiLimiter);
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
 
+// Request logger for API debugging
+app.use('/api/', (req, _res, next) => {
+  if (!req.path.startsWith('/ebay')) {
+    console.log(`[API] ${req.method} /api${req.path} body=${req.body ? JSON.stringify(req.body).substring(0, 100) : 'none'}`);
+  }
+  next();
+});
+
 // eBay Marketplace Account Deletion notifications (must be publicly accessible)
 app.use('/api/ebay', ebayNotificationRoutes);
 

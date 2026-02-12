@@ -7,11 +7,14 @@ class ApiError extends Error {
 }
 
 async function request(method, url, body = null) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = {};
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 35000);
   const config = { method, headers, signal: controller.signal };
-  if (body) config.body = JSON.stringify(body);
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+    config.body = JSON.stringify(body);
+  }
 
   try {
     const response = await fetch(url, config);
