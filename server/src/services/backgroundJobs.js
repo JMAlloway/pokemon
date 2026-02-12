@@ -126,7 +126,21 @@ export async function executeSearch(searchQuery) {
     // 5. Analyze listings for typos
     const analyzedListings = batchAnalyzeTitles(listings, searchQuery.cardName);
 
-    // 6. Calculate deal scores and store listings
+    // 6. Remove old sample data for this search if we got real results
+    const hasRealListings = analyzedListings.some(l => !l.ebayListingId.startsWith('ebay_'));
+    if (hasRealListings) {
+      const deleted = await prisma.ebayListing.deleteMany({
+        where: {
+          searchQueryId: searchQuery.id,
+          ebayListingId: { startsWith: 'ebay_' }
+        }
+      });
+      if (deleted.count > 0) {
+        console.log(`[BackgroundJobs] Cleaned up ${deleted.count} sample listings for "${searchQuery.cardName}"`);
+      }
+    }
+
+    // 7. Calculate deal scores and store listings
     let storedCount = 0;
     for (const listing of analyzedListings) {
       const priceGapPercent = baseline.weightedPrice
@@ -183,13 +197,13 @@ export async function executeSearch(searchQuery) {
       storedCount++;
     }
 
-    // 7. Update search query timestamp
+    // 8. Update search query timestamp
     await prisma.searchQuery.update({
       where: { id: searchQuery.id },
       data: { lastExecutedAt: new Date() }
     });
 
-    // 8. Complete job log
+    // 9. Complete job log
     await prisma.backgroundJobLog.update({
       where: { id: jobLog.id },
       data: {
