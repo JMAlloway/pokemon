@@ -137,6 +137,11 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
                 Recent sale data not available for this card
               </p>
             )}
+            {listing.shippingCost == null && listing.recentSoldPrice && (
+              <p className="text-xs text-warning mt-1.5">
+                Shipping cost unknown — deal % not calculated
+              </p>
+            )}
             {listing.recencyScore !== null && listing.recencyScore !== undefined && Number(listing.recencyScore) < 30 && listing.recentSoldPrice && (
               <p className="text-xs text-warning mt-1.5">
                 Limited recent sales data. Market estimate may be unreliable.

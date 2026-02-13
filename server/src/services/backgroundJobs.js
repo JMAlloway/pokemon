@@ -174,9 +174,11 @@ export async function executeSearch(searchQuery) {
       const effectivePrice = listing.buyingOption === 'AUCTION'
         ? (listing.currentBidPrice || listing.currentPrice)
         : listing.currentPrice;
-      const shipping = listing.shippingCost || 0;
+      const shippingKnown = listing.shippingCost != null;
+      const shipping = shippingKnown ? Number(listing.shippingCost) : 0;
       const totalPrice = effectivePrice + shipping;
-      const priceGapPercent = baseline.weightedPrice
+      // Only calculate price gap if we know the full cost (shipping included)
+      const priceGapPercent = baseline.weightedPrice && shippingKnown
         ? calculatePriceGap(baseline.weightedPrice, totalPrice)
         : null;
 
