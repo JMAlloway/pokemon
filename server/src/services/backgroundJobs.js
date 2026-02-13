@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '../db.js';
-import { searchListings, checkListingStatus, getRateLimitStatus } from './ebayApi.js';
+import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShipping } from './ebayApi.js';
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
 
@@ -113,6 +113,9 @@ export async function executeSearch(searchQuery) {
     });
     console.log(`[BackgroundJobs] Got ${listings.length} listings for "${searchQuery.cardName}"`);
 
+    // 1b. Fill missing shipping costs via batch getItems call
+    const listingsWithShipping = await fillMissingShipping(listings);
+
     // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
     let soldData = [];
 
@@ -152,7 +155,7 @@ export async function executeSearch(searchQuery) {
     const baseline = calculateRecencyWeightedBaseline(soldData);
 
     // 4. Analyze listings for typos
-    const analyzedListings = batchAnalyzeTitles(listings, searchQuery.cardName);
+    const analyzedListings = batchAnalyzeTitles(listingsWithShipping, searchQuery.cardName);
 
     // 5. Remove old sample data for this search if we got real results
     const hasRealListings = analyzedListings.some(l => !l.ebayListingId.startsWith('ebay_'));

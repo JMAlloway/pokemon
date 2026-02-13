@@ -472,6 +472,61 @@ export async function searchSoldListings({ cardName, set, graded, language, days
 }
 
 /**
+ * Batch-fetch shipping costs for items missing shipping data from search results.
+ * Uses the getItems endpoint which reliably returns shippingOptions.
+ * Fetches up to 20 items per API call.
+ *
+ * @param {Array} listings - Array of listing objects from searchListings
+ * @returns {Array} Same array with shippingCost filled in where possible
+ */
+export async function fillMissingShipping(listings) {
+  const needsShipping = listings.filter(l => l.shippingCost === null && !l.ebayListingId.startsWith('ebay_'));
+  if (needsShipping.length === 0) return listings;
+
+  // Build a map for quick lookup
+  const shippingMap = new Map();
+
+  // Batch in groups of 20 (eBay getItems limit)
+  for (let i = 0; i < needsShipping.length; i += 20) {
+    const batch = needsShipping.slice(i, i + 20);
+    const itemIds = batch.map(l => l.ebayListingId).join('|');
+
+    try {
+      const data = await withRetry(
+        () => ebayFetch(`/buy/browse/v1/item?item_ids=${encodeURIComponent(itemIds)}`),
+        2
+      );
+
+      if (data?.items) {
+        for (const item of data.items) {
+          const shippingOption = item.shippingOptions?.[0];
+          const cost = shippingOption?.shippingCost?.value !== undefined
+            ? parseFloat(shippingOption.shippingCost.value)
+            : null;
+          if (cost !== null) {
+            shippingMap.set(item.itemId, cost);
+          }
+        }
+      }
+    } catch (err) {
+      if (err.statusCode === 429) throw err;
+      console.warn(`[eBay API] Batch shipping fetch failed:`, err.message);
+    }
+  }
+
+  if (shippingMap.size === 0) return listings;
+
+  console.log(`[eBay API] Filled shipping for ${shippingMap.size}/${needsShipping.length} items`);
+
+  return listings.map(l => {
+    if (l.shippingCost === null && shippingMap.has(l.ebayListingId)) {
+      return { ...l, shippingCost: shippingMap.get(l.ebayListingId) };
+    }
+    return l;
+  });
+}
+
+/**
  * Get details for a specific eBay listing.
  */
 export async function getListingDetails(itemId) {
