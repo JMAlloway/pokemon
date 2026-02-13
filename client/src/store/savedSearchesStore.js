@@ -65,7 +65,12 @@ const useSavedSearchesStore = create((set) => ({
     set({ isRunning: true, error: null });
     try {
       const data = await api.post(`/api/saved-searches/${id}/run`);
-      set({ listings: data.listings || [], isRunning: false, error: data.error || null });
+      set(state => ({
+        listings: data.listings || [],
+        activeSearch: state.searches.find(s => s.id === id) || state.activeSearch,
+        isRunning: false,
+        error: data.error || null
+      }));
       return data;
     } catch (error) {
       set({ isRunning: false, error: error.message });
