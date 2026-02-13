@@ -14,16 +14,16 @@ const useSearchStore = create((set, get) => ({
   cacheTimestamp: null,
   suggestions: [],
 
-  search: async ({ cardName, set, rarity, condition }) => {
+  search: async ({ cardName, set: cardSet, rarity, condition }) => {
     set({ isSearching: true, error: null, cached: false });
     try {
-      const data = await api.post('/api/search', { cardName, set, rarity, condition });
+      const data = await api.post('/api/search', { cardName, set: cardSet, rarity, condition });
       set({
         listings: data.listings || [],
         baseline: data.baseline,
         recencyScore: data.recencyScore,
         sampleSize: data.sampleSize,
-        searchQuery: { id: data.searchQueryId, cardName, set },
+        searchQuery: { id: data.searchQueryId, cardName, set: cardSet },
         cached: data.cached || false,
         cacheTimestamp: data.cacheTimestamp,
         isSearching: false,
