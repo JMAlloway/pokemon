@@ -63,6 +63,7 @@ model EbayListing {
   bidCount            Int?          @db.SmallInt
   currentBidPrice     Decimal?      @db.Decimal(10, 2)
   auctionEndDate      DateTime?
+  shippingCost        Decimal?      @db.Decimal(10, 2)
   listingStatus       ListingStatus @default(active)
   createdAt           DateTime      @default(now())
   lastCheckedAt       DateTime      @default(now())

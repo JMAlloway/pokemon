@@ -169,8 +169,10 @@ export async function executeSearch(searchQuery) {
       const effectivePrice = listing.buyingOption === 'AUCTION'
         ? (listing.currentBidPrice || listing.currentPrice)
         : listing.currentPrice;
+      const shipping = listing.shippingCost || 0;
+      const totalPrice = effectivePrice + shipping;
       const priceGapPercent = baseline.weightedPrice
-        ? calculatePriceGap(baseline.weightedPrice, effectivePrice)
+        ? calculatePriceGap(baseline.weightedPrice, totalPrice)
         : null;
 
       const dealScore = calculateDealScore({
@@ -210,6 +212,7 @@ export async function executeSearch(searchQuery) {
           bidCount: listing.bidCount,
           currentBidPrice: listing.currentBidPrice,
           auctionEndDate: listing.auctionEndDate,
+          shippingCost: listing.shippingCost,
           listingStatus: listing.listingStatus || 'active'
         },
         update: {
@@ -226,6 +229,7 @@ export async function executeSearch(searchQuery) {
           bidCount: listing.bidCount,
           currentBidPrice: listing.currentBidPrice,
           auctionEndDate: listing.auctionEndDate,
+          shippingCost: listing.shippingCost,
           listingStatus: listing.listingStatus || 'active',
           lastCheckedAt: new Date()
         }

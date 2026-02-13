@@ -358,11 +358,19 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
       const buyingOption = isAuction ? 'AUCTION' : 'FIXED_PRICE';
       const bidPrice = isAuction ? parseFloat(item.currentBidPrice?.value || item.price?.value || 0) : null;
 
+      // Shipping: eBay returns shippingOptions array; first entry has the cost
+      // Free shipping shows as 0.00 or "0.0"; missing means unknown
+      const shippingOption = item.shippingOptions?.[0];
+      const shippingCost = shippingOption?.shippingCost?.value !== undefined
+        ? parseFloat(shippingOption.shippingCost.value)
+        : null;
+
       return {
         ebayListingId: item.itemId,
         listingTitle: item.title,
         currentPrice: isAuction ? (bidPrice || parseFloat(item.price?.value || 0)) : parseFloat(item.price?.value || 0),
         currency: item.price?.currency || 'USD',
+        shippingCost,
         sellerName: item.seller?.username || null,
         sellerRating: item.seller?.feedbackScore ? Math.min(5, item.seller.feedbackScore / 1000) : null,
         sellerFeedbackPercent: item.seller?.feedbackPercentage ? parseFloat(item.seller.feedbackPercentage) : null,
@@ -568,7 +576,8 @@ function generateSampleListings(cardName, set, rarity, condition) {
       buyingOption: isAuction ? 'AUCTION' : 'FIXED_PRICE',
       bidCount,
       currentBidPrice: auctionPrice,
-      auctionEndDate
+      auctionEndDate,
+      shippingCost: Math.random() < 0.4 ? 0 : Math.round((1 + Math.random() * 5) * 100) / 100
     });
   }
 
@@ -589,7 +598,8 @@ function generateSampleListings(cardName, set, rarity, condition) {
       images: [`https://placehold.co/400x560/2d1b4e/e0e0e0?text=${encodeURIComponent(typoVariants[i])}`],
       description: `${typoVariants[i]} Pokemon card${set ? ' from ' + set : ''}. ${condition || 'Good'} condition. Selling from personal collection.`,
       condition: condition || 'Good',
-      listingStatus: 'active'
+      listingStatus: 'active',
+      shippingCost: Math.random() < 0.5 ? 0 : Math.round((1 + Math.random() * 4) * 100) / 100
     });
   }
 

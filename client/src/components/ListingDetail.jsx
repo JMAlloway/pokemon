@@ -106,6 +106,9 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   <p className="text-lg font-bold text-text-primary">
                     ${Number(listing.currentBidPrice || listing.currentPrice).toFixed(2)}
                   </p>
+                  {listing.shippingCost !== null && listing.shippingCost !== undefined && Number(listing.shippingCost) > 0 && (
+                    <p className="text-xs text-text-muted">+${Number(listing.shippingCost).toFixed(2)} ship</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-text-muted">Bids</p>
@@ -136,20 +139,36 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
           {/* Title and price */}
           <div className="space-y-2">
             <h3 className="text-sm text-text-secondary">{listing.listingTitle}</h3>
-            <div className="flex items-baseline gap-4">
-              <div>
-                <span className="text-2xl font-bold text-text-primary">
-                  ${Number(isAuction ? (listing.currentBidPrice || listing.currentPrice) : listing.currentPrice).toFixed(2)}
-                </span>
-                <span className="text-sm text-text-muted ml-1">{isAuction ? 'current bid' : 'current'}</span>
-              </div>
-              {listing.recentSoldPrice && !isAuction && (
-                <div>
-                  <span className="text-lg text-text-secondary">${Number(listing.recentSoldPrice).toFixed(2)}</span>
-                  <span className="text-sm text-text-muted ml-1">market avg</span>
+            {(() => {
+              const itemPrice = Number(isAuction ? (listing.currentBidPrice || listing.currentPrice) : listing.currentPrice);
+              const shipping = listing.shippingCost !== null && listing.shippingCost !== undefined ? Number(listing.shippingCost) : null;
+              const totalPrice = shipping !== null ? itemPrice + shipping : itemPrice;
+              return (
+                <div className="flex items-baseline gap-4">
+                  <div>
+                    <span className="text-2xl font-bold text-text-primary">
+                      ${itemPrice.toFixed(2)}
+                    </span>
+                    <span className="text-sm text-text-muted ml-1">{isAuction ? 'current bid' : 'current'}</span>
+                    {shipping !== null && (
+                      <div className="text-sm text-text-muted mt-0.5">
+                        {shipping === 0 ? (
+                          <span className="text-deal-green">Free shipping</span>
+                        ) : (
+                          <span>+${shipping.toFixed(2)} shipping = <span className="font-semibold text-text-primary">${totalPrice.toFixed(2)}</span> total</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {listing.recentSoldPrice && !isAuction && (
+                    <div>
+                      <span className="text-lg text-text-secondary">${Number(listing.recentSoldPrice).toFixed(2)}</span>
+                      <span className="text-sm text-text-muted ml-1">market avg</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
 
           {/* Typo details */}
