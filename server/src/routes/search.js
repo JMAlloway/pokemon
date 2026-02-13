@@ -36,6 +36,15 @@ router.post('/', validateSearchQuery, async (req, res) => {
       });
     }
 
+    // Prisma only accepts enum values it was generated with.
+    // If the generated client is stale, skip persisting the rarity
+    // rather than crashing the search.
+    const PRISMA_RARITY_VALUES = [
+      'common', 'uncommon', 'rare', 'holoRare', 'ultraRare',
+      'illustrationRare', 'specialIllustrationRare', 'megaIllustrationRare', 'other'
+    ];
+    const persistableRarity = rarity && PRISMA_RARITY_VALUES.includes(rarity) ? rarity : null;
+
     // Create or find a temporary search query for this manual search
     let searchQuery = await prisma.searchQuery.findFirst({
       where: {
@@ -47,16 +56,34 @@ router.post('/', validateSearchQuery, async (req, res) => {
     });
 
     if (!searchQuery) {
-      searchQuery = await prisma.searchQuery.create({
-        data: {
-          userId: req.userId,
-          cardName: validation.name || cardName,
-          set: set || null,
-          rarity: rarity || null,
-          condition: condition || null,
-          searchFrequency: 'manual'
+      try {
+        searchQuery = await prisma.searchQuery.create({
+          data: {
+            userId: req.userId,
+            cardName: validation.name || cardName,
+            set: set || null,
+            rarity: persistableRarity,
+            condition: condition || null,
+            searchFrequency: 'manual'
+          }
+        });
+      } catch (createErr) {
+        // If rarity enum is rejected (stale Prisma client), retry without it
+        if (createErr.message?.includes('Invalid value for argument `rarity`')) {
+          searchQuery = await prisma.searchQuery.create({
+            data: {
+              userId: req.userId,
+              cardName: validation.name || cardName,
+              set: set || null,
+              rarity: null,
+              condition: condition || null,
+              searchFrequency: 'manual'
+            }
+          });
+        } else {
+          throw createErr;
         }
-      });
+      }
     }
 
     // Attach runtime filters (not persisted to SearchQuery model)
