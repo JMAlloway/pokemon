@@ -104,6 +104,7 @@ model RecentSoldListing {
   rarity        String?  @db.VarChar(50)
   condition     String?  @db.VarChar(50)
   soldPrice     Decimal  @db.Decimal(10, 2)
+  shippingCost  Decimal? @db.Decimal(10, 2)
   soldAt        DateTime
   daysOld       Int?     @db.SmallInt
   source        String   @default("eBay") @db.VarChar(50)

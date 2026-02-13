@@ -19,7 +19,7 @@ export default function PriceDisplay({ price, shippingCost, baseline, gapPercent
       )}
       {baselineNum && showGap && (
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-xs text-text-muted">Mkt: ${baselineNum.toFixed(2)}</span>
+          <span className="text-xs text-text-muted">Mkt (w/ ship): ${baselineNum.toFixed(2)}</span>
           {gap !== null && (
             <span
               className={`text-xs font-semibold ${

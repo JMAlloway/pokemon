@@ -444,13 +444,20 @@ export async function searchSoldListings({ cardName, set, graded, language, days
     // (sandbox doesn't have completed items endpoint access)
     const pricePoints = data.itemSummaries
       .filter(item => item.price?.value)
-      .map(item => ({
-        cardName,
-        set: set || null,
-        soldPrice: parseFloat(item.price.value),
-        soldAt: new Date(item.itemCreationDate || Date.now()),
-        source: 'eBay'
-      }));
+      .map(item => {
+        const shippingOption = item.shippingOptions?.[0];
+        const shippingCost = shippingOption?.shippingCost?.value !== undefined
+          ? parseFloat(shippingOption.shippingCost.value)
+          : null;
+        return {
+          cardName,
+          set: set || null,
+          soldPrice: parseFloat(item.price.value),
+          shippingCost,
+          soldAt: new Date(item.itemCreationDate || Date.now()),
+          source: 'eBay'
+        };
+      });
 
     if (pricePoints.length === 0) {
       return generateSampleSoldListings(cardName, set, days);
@@ -614,6 +621,7 @@ function generateSampleSoldListings(cardName, set, days = 90) {
     const daysAgo = Math.floor(Math.random() * days);
     const priceVariation = (Math.random() * 0.4 - 0.1) * basePrice;
     const price = Math.max(0.99, Math.round((basePrice + priceVariation) * 100) / 100);
+    const shipping = Math.random() < 0.4 ? 0 : Math.round((1 + Math.random() * 5) * 100) / 100;
 
     const soldDate = new Date();
     soldDate.setDate(soldDate.getDate() - daysAgo);
@@ -622,6 +630,7 @@ function generateSampleSoldListings(cardName, set, days = 90) {
       cardName,
       set: set || null,
       soldPrice: price,
+      shippingCost: shipping,
       soldAt: soldDate,
       daysOld: daysAgo,
       source: 'eBay'

@@ -123,7 +123,10 @@ export async function executeSearch(searchQuery) {
         orderBy: { soldAt: 'desc' },
         take: 100
       });
-      soldData = storedSold.map(s => ({ soldPrice: Number(s.soldPrice), soldAt: s.soldAt }));
+      soldData = storedSold.map(s => ({
+        soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
+        soldAt: s.soldAt
+      }));
     } catch (dbErr) {
       console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
     }
@@ -132,10 +135,13 @@ export async function executeSearch(searchQuery) {
     if (soldData.length === 0) {
       try {
         const { searchSoldListings } = await import('./ebayApi.js');
-        const freshSold = await searchSoldListings(searchQuery.cardName, searchQuery.set);
+        const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
         if (freshSold.length > 0) {
           await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
-          soldData = freshSold.map(s => ({ soldPrice: Number(s.soldPrice), soldAt: new Date(s.soldAt) }));
+          soldData = freshSold.map(s => ({
+            soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
+            soldAt: new Date(s.soldAt)
+          }));
         }
       } catch (soldErr) {
         console.warn(`[BackgroundJobs] Could not fetch sold listings:`, soldErr.message);
@@ -354,6 +360,7 @@ export async function monitorSavedDeals() {
 async function storeSoldListings(soldListings, cardName, set) {
   for (const sold of soldListings) {
     const daysOld = Math.floor((Date.now() - new Date(sold.soldAt).getTime()) / (1000 * 60 * 60 * 24));
+    const shipping = sold.shippingCost != null ? Number(sold.shippingCost) : null;
 
     try {
       await prisma.recentSoldListing.create({
@@ -363,6 +370,7 @@ async function storeSoldListings(soldListings, cardName, set) {
           rarity: sold.rarity || null,
           condition: sold.condition || null,
           soldPrice: sold.soldPrice,
+          shippingCost: shipping,
           soldAt: new Date(sold.soldAt),
           daysOld: Math.min(90, daysOld),
           source: sold.source || 'eBay'

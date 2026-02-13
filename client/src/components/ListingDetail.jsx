@@ -213,13 +213,20 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   const daysAgo = sold.daysOld || Math.floor((Date.now() - new Date(sold.soldAt).getTime()) / (1000 * 60 * 60 * 24));
                   const recencyLabel = daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
                   const recencyColor = daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
+                  const soldShipping = sold.shippingCost != null ? Number(sold.shippingCost) : null;
+                  const soldTotal = Number(sold.soldPrice) + (soldShipping || 0);
 
                   return (
                     <div key={i} className={`flex items-center justify-between py-1.5 border-b border-border last:border-0 ${sold.isOutlier ? 'opacity-40' : ''}`}>
                       <div className="flex items-center gap-2">
                         <span className={`text-sm font-medium ${sold.isOutlier ? 'line-through text-text-muted' : 'text-text-primary'}`}>
-                          ${Number(sold.soldPrice).toFixed(2)}
+                          ${soldTotal.toFixed(2)}
                         </span>
+                        {soldShipping != null && soldShipping > 0 && (
+                          <span className="text-xs text-text-muted">
+                            (${Number(sold.soldPrice).toFixed(2)} + ${soldShipping.toFixed(2)} ship)
+                          </span>
+                        )}
                         {sold.isOutlier ? (
                           <span className="text-xs font-medium text-error/70">Outlier</span>
                         ) : (

@@ -21,7 +21,9 @@ export function flagPriceOutliers(listings, multiplier = 1.5) {
     return listings.map(l => ({ ...l, isOutlier: false }));
   }
 
-  const prices = listings.map(l => Number(l.soldPrice)).sort((a, b) => a - b);
+  // Use total price (item + shipping) for outlier detection
+  const totalPrice = l => Number(l.soldPrice) + (l.shippingCost != null ? Number(l.shippingCost) : 0);
+  const prices = listings.map(totalPrice).sort((a, b) => a - b);
   const q1 = prices[Math.floor(prices.length * 0.25)];
   const q3 = prices[Math.floor(prices.length * 0.75)];
   const iqr = q3 - q1;
@@ -29,7 +31,7 @@ export function flagPriceOutliers(listings, multiplier = 1.5) {
   const upperBound = q3 + multiplier * iqr;
 
   return listings.map(l => {
-    const price = Number(l.soldPrice);
+    const price = totalPrice(l);
     return { ...l, isOutlier: price < lowerBound || price > upperBound };
   });
 }

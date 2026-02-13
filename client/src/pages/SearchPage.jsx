@@ -110,7 +110,7 @@ export default function SearchPage() {
               )}
               {baseline && (
                 <span className="text-sm text-text-muted">
-                  Market avg: ${Number(baseline).toFixed(2)}
+                  Market avg (w/ ship): ${Number(baseline).toFixed(2)}
                 </span>
               )}
               {sampleSize !== null && sampleSize !== undefined && sampleSize <= 2 && sampleSize > 0 && (
