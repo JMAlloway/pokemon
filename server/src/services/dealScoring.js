@@ -1,11 +1,14 @@
 /**
  * Deal Score Algorithm
- * Combines two signals:
- * 1. Typo presence (binary flag, primary ranking signal) — up to 50 points
- * 2. Price gap percentage (secondary ranking signal) — up to 50 points
  *
- * Recency scoring is applied to sold listings baseline calculation,
- * and also influences the deal flag thresholds (more recent comps = higher confidence).
+ * Price gap (below/above market) is the PRIMARY signal — a listing priced
+ * above market is capped at a low score regardless of other factors.
+ *
+ * BIN:     Price gap (up to 60 pts) + Typo (up to 40 pts)
+ * Auction: Price gap (up to 50 pts, time-dampened) + Time/bids (up to 20 pts) + Typo (up to 15 pts)
+ *
+ * Above-market cap: listings priced above market have their score hard-capped
+ * so that good timing or typos alone can never produce a high deal score.
  */
 
 /**
@@ -110,15 +113,14 @@ export function calculatePriceGap(baselinePrice, listingPrice) {
  * Calculate deal score (0-100).
  *
  * For FIXED_PRICE (Buy It Now):
- *   Primary signal: typo presence (up to 50 points)
- *   Secondary signal: price gap percentage (up to 50 points)
- *   BIN listings with low price are the strongest deals.
+ *   Primary signal: price gap percentage (up to 60 points)
+ *   Secondary signal: typo presence (up to 40 points)
+ *   Above-market listings are capped at a low score.
  *
  * For AUCTION:
- *   Scoring factors in time remaining, bid count, and price vs market.
- *   - Auctions ending soon with low bids and below-market price = opportunity
- *   - Auctions with many bids are competitive and less likely to be deals
- *   - Score is generally lower than equivalent BIN since outcome is uncertain
+ *   Primary signal: price gap percentage (up to 50 points)
+ *   Secondary signals: time remaining, bid competition, typo
+ *   Above-market listings are capped at a low score.
  *
  * @param {{ hasTypo: boolean, priceGapPercent: number|null, recencyScore: number, typoConfidenceScore: number|null, buyingOption: string, bidCount: number|null, auctionEndDate: string|Date|null }} params
  * @returns {number} Deal score 0-100
@@ -130,21 +132,25 @@ export function calculateDealScore({ hasTypo, priceGapPercent, recencyScore = 50
 
   let score = 0;
 
-  // Typo signal: 0-50 points
-  if (hasTypo) {
-    // Base 30 points for any typo, bonus based on confidence
-    const confidence = typoConfidenceScore || 70;
-    score += Math.round(30 + (confidence / 100) * 20);
-  }
-
-  // Price gap signal: 0-50 points
+  // Price gap signal: 0-60 points (PRIMARY)
   if (priceGapPercent !== null && priceGapPercent > 0) {
-    // Scale price gap to 0-50 points (cap at 50% gap = max points)
-    const gapScore = Math.min(50, Math.round(priceGapPercent));
-
-    // Apply recency confidence: if recency data is unreliable, reduce gap contribution
+    // Scale: 1% below = ~1.2 pts, capping at 60 pts around 50% gap
+    const gapScore = Math.min(60, Math.round(priceGapPercent * 1.2));
     const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
     score += Math.round(gapScore * confidenceMultiplier);
+  }
+
+  // Typo signal: 0-40 points
+  if (hasTypo) {
+    const confidence = typoConfidenceScore || 70;
+    score += Math.round(25 + (confidence / 100) * 15);
+  }
+
+  // Above-market cap: good timing/typo can't make an overpriced listing a "deal"
+  if (priceGapPercent !== null && priceGapPercent < 0) {
+    const abovePercent = Math.abs(priceGapPercent);
+    const cap = Math.max(5, Math.round(25 - abovePercent));
+    score = Math.min(score, cap);
   }
 
   return Math.min(100, Math.max(0, score));
@@ -156,13 +162,15 @@ export function calculateDealScore({ hasTypo, priceGapPercent, recencyScore = 50
  * Key insight: auction prices are only meaningful close to end time.
  * A $0.99 bid with 5 days left will almost certainly get bid up — snipers
  * wait until the final minutes. So we apply a time-decay multiplier that
- * heavily dampens the price gap and bid signals for far-out auctions.
+ * dampens the price gap and bid signals for far-out auctions.
  *
- * Signals:
- * 1. Time remaining: auctions ending soon with few bids = opportunity (up to 25 pts)
- * 2. Bid competition: fewer bids = less competition (up to 25 pts)
- * 3. Price gap: current bid vs market price (up to 30 pts)
- * 4. Typo bonus: typos reduce visibility = less competition (up to 20 pts)
+ * PRIMARY signal: price gap (up to 50 pts) — below-market price is what
+ * makes a deal. Above-market listings are capped at a low score regardless
+ * of other signals.
+ *
+ * Secondary signals:
+ * 1. Time remaining + bid competition (up to 20 pts combined)
+ * 2. Typo bonus (up to 15 pts)
  *
  * Time-decay multiplier (applied to price gap + bid signals):
  *   < 1h remaining:  1.0  (price is real)
@@ -176,23 +184,23 @@ function calculateAuctionDealScore({ hasTypo, priceGapPercent, recencyScore = 50
 
   // Time-decay multiplier: how much to trust the current price
   let timeMultiplier = 0.05; // default: far out or unknown
-  let timeScore = 3;         // base time signal for far-out auctions
+  let timeScore = 2;         // base time signal for far-out auctions
 
   if (auctionEndDate) {
     const hoursRemaining = Math.max(0, (new Date(auctionEndDate) - new Date()) / (1000 * 60 * 60));
 
     if (hoursRemaining <= 1) {
       timeMultiplier = 1.0;
-      timeScore = bids <= 2 ? 25 : bids <= 5 ? 15 : 5;
+      timeScore = bids <= 2 ? 12 : bids <= 5 ? 8 : 3;
     } else if (hoursRemaining <= 6) {
       timeMultiplier = 0.75;
-      timeScore = bids <= 3 ? 20 : bids <= 8 ? 10 : 3;
+      timeScore = bids <= 3 ? 10 : bids <= 8 ? 6 : 2;
     } else if (hoursRemaining <= 24) {
       timeMultiplier = 0.45;
-      timeScore = bids <= 2 ? 12 : 5;
+      timeScore = bids <= 2 ? 7 : 3;
     } else if (hoursRemaining <= 72) {
       timeMultiplier = 0.15;
-      timeScore = 3;
+      timeScore = 2;
     } else {
       timeMultiplier = 0.05;
       timeScore = 1;
@@ -201,31 +209,37 @@ function calculateAuctionDealScore({ hasTypo, priceGapPercent, recencyScore = 50
 
   let score = timeScore;
 
-  // 2. Bid competition signal (0-25 points, dampened by time)
+  // 2. Bid competition signal (0-8 points, dampened by time)
   let bidScore = 0;
   if (bids === 0) {
-    bidScore = 25;
+    bidScore = 8;
   } else if (bids <= 2) {
-    bidScore = 18;
+    bidScore = 5;
   } else if (bids <= 5) {
-    bidScore = 10;
+    bidScore = 3;
   } else if (bids <= 10) {
-    bidScore = 4;
+    bidScore = 1;
   }
   score += Math.round(bidScore * timeMultiplier);
 
-  // 3. Price gap signal (0-30 points, dampened by time)
+  // 3. Price gap signal: 0-50 points (PRIMARY — dampened by time)
   if (priceGapPercent !== null && priceGapPercent > 0) {
-    const gapScore = Math.min(30, Math.round(priceGapPercent * 0.6));
+    const gapScore = Math.min(50, Math.round(priceGapPercent));
     const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
     score += Math.round(gapScore * confidenceMultiplier * timeMultiplier);
   }
 
-  // 4. Typo bonus (0-20 points) — NOT dampened by time
-  // Typo value persists regardless of time: fewer eyeballs = less competition at close
+  // 4. Typo bonus (0-15 points) — NOT dampened by time
   if (hasTypo) {
     const confidence = typoConfidenceScore || 70;
-    score += Math.round(10 + (confidence / 100) * 10);
+    score += Math.round(8 + (confidence / 100) * 7);
+  }
+
+  // Above-market cap: time/bids/typo alone can't make an overpriced listing a "deal"
+  if (priceGapPercent !== null && priceGapPercent < 0) {
+    const abovePercent = Math.abs(priceGapPercent);
+    const cap = Math.max(5, Math.round(20 - abovePercent));
+    score = Math.min(score, cap);
   }
 
   return Math.min(100, Math.max(0, score));
@@ -243,29 +257,39 @@ export function getDealScoreBreakdown({ hasTypo, priceGapPercent, recencyScore =
   const components = [];
   let total = 0;
 
-  // Typo signal: 0-50 points
-  if (hasTypo) {
-    const confidence = typoConfidenceScore || 70;
-    const pts = Math.round(30 + (confidence / 100) * 20);
-    components.push({ label: 'Misspelling detected', points: pts, max: 50, detail: `${Math.round(confidence)}% confidence` });
-    total += pts;
-  } else {
-    components.push({ label: 'No misspelling', points: 0, max: 50, detail: 'Correctly listed' });
-  }
-
-  // Price gap signal: 0-50 points
+  // Price gap signal: 0-60 points (PRIMARY)
   if (priceGapPercent !== null && priceGapPercent > 0) {
-    const gapScore = Math.min(50, Math.round(priceGapPercent));
+    const gapScore = Math.min(60, Math.round(priceGapPercent * 1.2));
     const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
     const pts = Math.round(gapScore * confidenceMultiplier);
-    components.push({ label: 'Below market price', points: pts, max: 50, detail: `${priceGapPercent.toFixed(1)}% gap × ${Math.round(confidenceMultiplier * 100)}% data confidence` });
+    components.push({ label: 'Below market price', points: pts, max: 60, detail: `${priceGapPercent.toFixed(1)}% below × ${Math.round(confidenceMultiplier * 100)}% data confidence` });
     total += pts;
   } else if (shippingCost == null) {
-    components.push({ label: 'Price gap', points: 0, max: 50, detail: 'Shipping unknown — can\'t compare to market' });
+    components.push({ label: 'Price gap', points: 0, max: 60, detail: 'Shipping unknown — can\'t compare to market' });
   } else if (priceGapPercent !== null && priceGapPercent <= 0) {
-    components.push({ label: 'At/above market price', points: 0, max: 50, detail: `${Math.abs(priceGapPercent).toFixed(1)}% above market` });
+    components.push({ label: 'Above market price', points: 0, max: 60, detail: `${Math.abs(priceGapPercent).toFixed(1)}% above market (score capped)` });
   } else {
-    components.push({ label: 'Price gap', points: 0, max: 50, detail: 'No market data available' });
+    components.push({ label: 'Price gap', points: 0, max: 60, detail: 'No market data available' });
+  }
+
+  // Typo signal: 0-40 points
+  if (hasTypo) {
+    const confidence = typoConfidenceScore || 70;
+    const pts = Math.round(25 + (confidence / 100) * 15);
+    components.push({ label: 'Misspelling detected', points: pts, max: 40, detail: `${Math.round(confidence)}% confidence` });
+    total += pts;
+  } else {
+    components.push({ label: 'No misspelling', points: 0, max: 40, detail: 'Correctly listed' });
+  }
+
+  // Apply above-market cap
+  if (priceGapPercent !== null && priceGapPercent < 0) {
+    const abovePercent = Math.abs(priceGapPercent);
+    const cap = Math.max(5, Math.round(25 - abovePercent));
+    if (total > cap) {
+      components.push({ label: 'Above-market cap', points: cap - total, max: 0, detail: `${abovePercent.toFixed(1)}% above market limits score` });
+      total = cap;
+    }
   }
 
   return { total: Math.min(100, Math.max(0, total)), max: 100, components };
@@ -278,7 +302,7 @@ function getAuctionBreakdown({ hasTypo, priceGapPercent, recencyScore = 50, typo
 
   // Time-decay multiplier
   let timeMultiplier = 0.05;
-  let timeScore = 3;
+  let timeScore = 2;
   let timeLabel = '3+ days out';
 
   if (auctionEndDate) {
@@ -286,19 +310,19 @@ function getAuctionBreakdown({ hasTypo, priceGapPercent, recencyScore = 50, typo
 
     if (hoursRemaining <= 1) {
       timeMultiplier = 1.0;
-      timeScore = bids <= 2 ? 25 : bids <= 5 ? 15 : 5;
+      timeScore = bids <= 2 ? 12 : bids <= 5 ? 8 : 3;
       timeLabel = '< 1 hour left';
     } else if (hoursRemaining <= 6) {
       timeMultiplier = 0.75;
-      timeScore = bids <= 3 ? 20 : bids <= 8 ? 10 : 3;
+      timeScore = bids <= 3 ? 10 : bids <= 8 ? 6 : 2;
       timeLabel = `${Math.round(hoursRemaining)}h left`;
     } else if (hoursRemaining <= 24) {
       timeMultiplier = 0.45;
-      timeScore = bids <= 2 ? 12 : 5;
+      timeScore = bids <= 2 ? 7 : 3;
       timeLabel = `${Math.round(hoursRemaining)}h left`;
     } else if (hoursRemaining <= 72) {
       timeMultiplier = 0.15;
-      timeScore = 3;
+      timeScore = 2;
       timeLabel = `${Math.round(hoursRemaining / 24)}d left`;
     } else {
       timeMultiplier = 0.05;
@@ -307,40 +331,50 @@ function getAuctionBreakdown({ hasTypo, priceGapPercent, recencyScore = 50, typo
     }
   }
 
-  components.push({ label: 'Time remaining', points: timeScore, max: 25, detail: `${timeLabel} (×${timeMultiplier} multiplier on price signals)` });
+  components.push({ label: 'Time remaining', points: timeScore, max: 12, detail: `${timeLabel} (×${timeMultiplier} multiplier on price signals)` });
   total += timeScore;
 
-  // Bid competition
+  // Bid competition (dampened by time)
   let bidScore = 0;
-  if (bids === 0) bidScore = 25;
-  else if (bids <= 2) bidScore = 18;
-  else if (bids <= 5) bidScore = 10;
-  else if (bids <= 10) bidScore = 4;
+  if (bids === 0) bidScore = 8;
+  else if (bids <= 2) bidScore = 5;
+  else if (bids <= 5) bidScore = 3;
+  else if (bids <= 10) bidScore = 1;
   const dampedBidScore = Math.round(bidScore * timeMultiplier);
-  components.push({ label: 'Bid competition', points: dampedBidScore, max: 25, detail: `${bids} bid${bids !== 1 ? 's' : ''} (${bidScore} pts × ${timeMultiplier} time)` });
+  components.push({ label: 'Bid competition', points: dampedBidScore, max: 8, detail: `${bids} bid${bids !== 1 ? 's' : ''} (${bidScore} pts × ${timeMultiplier} time)` });
   total += dampedBidScore;
 
-  // Price gap
+  // Price gap: 0-50 points (PRIMARY — dampened by time)
   if (priceGapPercent !== null && priceGapPercent > 0) {
-    const gapScore = Math.min(30, Math.round(priceGapPercent * 0.6));
+    const gapScore = Math.min(50, Math.round(priceGapPercent));
     const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
     const pts = Math.round(gapScore * confidenceMultiplier * timeMultiplier);
-    components.push({ label: 'Below market price', points: pts, max: 30, detail: `${priceGapPercent.toFixed(1)}% gap × ${Math.round(confidenceMultiplier * 100)}% confidence × ${timeMultiplier} time` });
+    components.push({ label: 'Below market price', points: pts, max: 50, detail: `${priceGapPercent.toFixed(1)}% below × ${Math.round(confidenceMultiplier * 100)}% confidence × ${timeMultiplier} time` });
     total += pts;
   } else if (shippingCost == null) {
-    components.push({ label: 'Price gap', points: 0, max: 30, detail: 'Shipping unknown — can\'t compare to market' });
+    components.push({ label: 'Price gap', points: 0, max: 50, detail: 'Shipping unknown — can\'t compare to market' });
   } else {
-    components.push({ label: 'Price gap', points: 0, max: 30, detail: priceGapPercent !== null ? `${Math.abs(priceGapPercent).toFixed(1)}% above market` : 'No market data' });
+    components.push({ label: 'Price gap', points: 0, max: 50, detail: priceGapPercent !== null ? `${Math.abs(priceGapPercent).toFixed(1)}% above market` : 'No market data' });
   }
 
-  // Typo bonus (NOT dampened by time)
+  // Typo bonus: 0-15 points (NOT dampened by time)
   if (hasTypo) {
     const confidence = typoConfidenceScore || 70;
-    const pts = Math.round(10 + (confidence / 100) * 10);
-    components.push({ label: 'Misspelling detected', points: pts, max: 20, detail: `Less visibility = less competition` });
+    const pts = Math.round(8 + (confidence / 100) * 7);
+    components.push({ label: 'Misspelling detected', points: pts, max: 15, detail: `Less visibility = less competition` });
     total += pts;
   } else {
-    components.push({ label: 'No misspelling', points: 0, max: 20 });
+    components.push({ label: 'No misspelling', points: 0, max: 15 });
+  }
+
+  // Above-market cap: time/bids/typo alone can't make an overpriced listing a "deal"
+  if (priceGapPercent !== null && priceGapPercent < 0) {
+    const abovePercent = Math.abs(priceGapPercent);
+    const cap = Math.max(5, Math.round(20 - abovePercent));
+    if (total > cap) {
+      components.push({ label: 'Above-market cap', points: cap - total, max: 0, detail: `${abovePercent.toFixed(1)}% above market limits score` });
+      total = cap;
+    }
   }
 
   return { total: Math.min(100, Math.max(0, total)), max: 100, components };
