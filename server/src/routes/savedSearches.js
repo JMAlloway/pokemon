@@ -60,10 +60,31 @@ router.post('/', validateSearchQuery, async (req, res) => {
       });
     }
 
+    const resolvedName = validation.name || cardName;
+
+    // Check for duplicate saved search
+    const existing = await prisma.searchQuery.findFirst({
+      where: {
+        userId: req.userId,
+        cardName: resolvedName,
+        set: set || null
+      }
+    });
+
+    if (existing) {
+      // Run the existing search instead of creating a duplicate
+      const result = await executeSearch(existing);
+      const listings = await prisma.ebayListing.findMany({
+        where: { searchQueryId: existing.id, listingStatus: 'active' },
+        orderBy: [{ hasTypo: 'desc' }, { dealScore: 'desc' }]
+      });
+      return res.json({ search: existing, listings, searchResult: result });
+    }
+
     const search = await prisma.searchQuery.create({
       data: {
         userId: req.userId,
-        cardName: validation.name || cardName,
+        cardName: resolvedName,
         set: set || null,
         rarity: rarity || null,
         condition: condition || null,

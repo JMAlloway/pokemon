@@ -21,15 +21,18 @@ const useSavedSearchesStore = create((set) => ({
   },
 
   createSearch: async (searchData) => {
+    set({ isRunning: true, error: null });
     try {
       const data = await api.post('/api/saved-searches', searchData);
       set(state => ({
         searches: [data.search, ...state.searches],
         activeSearch: data.search,
-        listings: data.listings || []
+        listings: data.listings || [],
+        isRunning: false
       }));
       return data;
     } catch (error) {
+      set({ isRunning: false, error: error.message });
       throw error;
     }
   },
