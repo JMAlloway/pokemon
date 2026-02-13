@@ -291,7 +291,7 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
   });
 
   // Build filter conditions
-  const filters = [];
+  const filters = ['buyingOptions:{FIXED_PRICE|AUCTION}'];
   if (condition) {
     const conditionMap = {
       mint: '1000',
