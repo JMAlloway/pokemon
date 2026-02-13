@@ -204,6 +204,7 @@ async function ebayFetch(endpoint, options = {}) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country=US,zip=19406',
         ...options.headers
       }
     });
@@ -483,13 +484,15 @@ export async function fillMissingShipping(listings) {
   const needsShipping = listings.filter(l => l.shippingCost === null && !l.ebayListingId.startsWith('ebay_'));
   if (needsShipping.length === 0) return listings;
 
-  // Build a map for quick lookup
+  console.log(`[eBay API] ${needsShipping.length} listings need shipping data, fetching via getItems...`);
+
   const shippingMap = new Map();
 
-  // Batch in groups of 20 (eBay getItems limit)
+  // Batch in groups of 20 (eBay getItems limit).
+  // Item IDs use pipes internally (v1|123|0) — separate multiple IDs with COMMAS.
   for (let i = 0; i < needsShipping.length; i += 20) {
     const batch = needsShipping.slice(i, i + 20);
-    const itemIds = batch.map(l => l.ebayListingId).join('|');
+    const itemIds = batch.map(l => l.ebayListingId).join(',');
 
     try {
       const data = await withRetry(
@@ -514,7 +517,37 @@ export async function fillMissingShipping(listings) {
     }
   }
 
-  if (shippingMap.size === 0) return listings;
+  // Fallback: for any items still missing after batch, try individual getItem calls
+  // (getItem returns the full item detail including shippingOptions reliably)
+  const stillMissing = needsShipping.filter(l => !shippingMap.has(l.ebayListingId));
+  if (stillMissing.length > 0 && stillMissing.length <= 10) {
+    console.log(`[eBay API] ${stillMissing.length} items still missing shipping, trying individual getItem...`);
+    for (const listing of stillMissing) {
+      try {
+        const data = await withRetry(
+          () => ebayFetch(`/buy/browse/v1/item/${encodeURIComponent(listing.ebayListingId)}`),
+          1
+        );
+        if (data) {
+          const shippingOption = data.shippingOptions?.[0];
+          const cost = shippingOption?.shippingCost?.value !== undefined
+            ? parseFloat(shippingOption.shippingCost.value)
+            : null;
+          if (cost !== null) {
+            shippingMap.set(listing.ebayListingId, cost);
+          }
+        }
+      } catch (err) {
+        if (err.statusCode === 429) throw err;
+        // Individual item fetch failed — skip
+      }
+    }
+  }
+
+  if (shippingMap.size === 0) {
+    console.log(`[eBay API] Could not retrieve shipping for any of the ${needsShipping.length} items`);
+    return listings;
+  }
 
   console.log(`[eBay API] Filled shipping for ${shippingMap.size}/${needsShipping.length} items`);
 
