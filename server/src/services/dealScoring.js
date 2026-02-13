@@ -232,6 +232,121 @@ function calculateAuctionDealScore({ hasTypo, priceGapPercent, recencyScore = 50
 }
 
 /**
+ * Get a detailed breakdown of how the deal score was calculated.
+ * Returns individual point components so the frontend can show "how we got here".
+ */
+export function getDealScoreBreakdown({ hasTypo, priceGapPercent, recencyScore = 50, typoConfidenceScore = null, buyingOption = 'FIXED_PRICE', bidCount = null, auctionEndDate = null, shippingCost = null }) {
+  if (buyingOption === 'AUCTION') {
+    return getAuctionBreakdown({ hasTypo, priceGapPercent, recencyScore, typoConfidenceScore, bidCount, auctionEndDate, shippingCost });
+  }
+
+  const components = [];
+  let total = 0;
+
+  // Typo signal: 0-50 points
+  if (hasTypo) {
+    const confidence = typoConfidenceScore || 70;
+    const pts = Math.round(30 + (confidence / 100) * 20);
+    components.push({ label: 'Misspelling detected', points: pts, max: 50, detail: `${Math.round(confidence)}% confidence` });
+    total += pts;
+  } else {
+    components.push({ label: 'No misspelling', points: 0, max: 50, detail: 'Correctly listed' });
+  }
+
+  // Price gap signal: 0-50 points
+  if (priceGapPercent !== null && priceGapPercent > 0) {
+    const gapScore = Math.min(50, Math.round(priceGapPercent));
+    const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
+    const pts = Math.round(gapScore * confidenceMultiplier);
+    components.push({ label: 'Below market price', points: pts, max: 50, detail: `${priceGapPercent.toFixed(1)}% gap × ${Math.round(confidenceMultiplier * 100)}% data confidence` });
+    total += pts;
+  } else if (shippingCost == null) {
+    components.push({ label: 'Price gap', points: 0, max: 50, detail: 'Shipping unknown — can\'t compare to market' });
+  } else if (priceGapPercent !== null && priceGapPercent <= 0) {
+    components.push({ label: 'At/above market price', points: 0, max: 50, detail: `${Math.abs(priceGapPercent).toFixed(1)}% above market` });
+  } else {
+    components.push({ label: 'Price gap', points: 0, max: 50, detail: 'No market data available' });
+  }
+
+  return { total: Math.min(100, Math.max(0, total)), max: 100, components };
+}
+
+function getAuctionBreakdown({ hasTypo, priceGapPercent, recencyScore = 50, typoConfidenceScore = null, bidCount = 0, auctionEndDate = null, shippingCost = null }) {
+  const bids = bidCount || 0;
+  const components = [];
+  let total = 0;
+
+  // Time-decay multiplier
+  let timeMultiplier = 0.05;
+  let timeScore = 3;
+  let timeLabel = '3+ days out';
+
+  if (auctionEndDate) {
+    const hoursRemaining = Math.max(0, (new Date(auctionEndDate) - new Date()) / (1000 * 60 * 60));
+
+    if (hoursRemaining <= 1) {
+      timeMultiplier = 1.0;
+      timeScore = bids <= 2 ? 25 : bids <= 5 ? 15 : 5;
+      timeLabel = '< 1 hour left';
+    } else if (hoursRemaining <= 6) {
+      timeMultiplier = 0.75;
+      timeScore = bids <= 3 ? 20 : bids <= 8 ? 10 : 3;
+      timeLabel = `${Math.round(hoursRemaining)}h left`;
+    } else if (hoursRemaining <= 24) {
+      timeMultiplier = 0.45;
+      timeScore = bids <= 2 ? 12 : 5;
+      timeLabel = `${Math.round(hoursRemaining)}h left`;
+    } else if (hoursRemaining <= 72) {
+      timeMultiplier = 0.15;
+      timeScore = 3;
+      timeLabel = `${Math.round(hoursRemaining / 24)}d left`;
+    } else {
+      timeMultiplier = 0.05;
+      timeScore = 1;
+      timeLabel = `${Math.round(hoursRemaining / 24)}d left`;
+    }
+  }
+
+  components.push({ label: 'Time remaining', points: timeScore, max: 25, detail: `${timeLabel} (×${timeMultiplier} multiplier on price signals)` });
+  total += timeScore;
+
+  // Bid competition
+  let bidScore = 0;
+  if (bids === 0) bidScore = 25;
+  else if (bids <= 2) bidScore = 18;
+  else if (bids <= 5) bidScore = 10;
+  else if (bids <= 10) bidScore = 4;
+  const dampedBidScore = Math.round(bidScore * timeMultiplier);
+  components.push({ label: 'Bid competition', points: dampedBidScore, max: 25, detail: `${bids} bid${bids !== 1 ? 's' : ''} (${bidScore} pts × ${timeMultiplier} time)` });
+  total += dampedBidScore;
+
+  // Price gap
+  if (priceGapPercent !== null && priceGapPercent > 0) {
+    const gapScore = Math.min(30, Math.round(priceGapPercent * 0.6));
+    const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
+    const pts = Math.round(gapScore * confidenceMultiplier * timeMultiplier);
+    components.push({ label: 'Below market price', points: pts, max: 30, detail: `${priceGapPercent.toFixed(1)}% gap × ${Math.round(confidenceMultiplier * 100)}% confidence × ${timeMultiplier} time` });
+    total += pts;
+  } else if (shippingCost == null) {
+    components.push({ label: 'Price gap', points: 0, max: 30, detail: 'Shipping unknown — can\'t compare to market' });
+  } else {
+    components.push({ label: 'Price gap', points: 0, max: 30, detail: priceGapPercent !== null ? `${Math.abs(priceGapPercent).toFixed(1)}% above market` : 'No market data' });
+  }
+
+  // Typo bonus (NOT dampened by time)
+  if (hasTypo) {
+    const confidence = typoConfidenceScore || 70;
+    const pts = Math.round(10 + (confidence / 100) * 10);
+    components.push({ label: 'Misspelling detected', points: pts, max: 20, detail: `Less visibility = less competition` });
+    total += pts;
+  } else {
+    components.push({ label: 'No misspelling', points: 0, max: 20 });
+  }
+
+  return { total: Math.min(100, Math.max(0, total)), max: 100, components };
+}
+
+/**
  * Generate human-readable deal summary.
  */
 export function getDealSummary({ hasTypo, typoDetails, priceGapPercent, recencyScore, sampleSize, buyingOption, bidCount, auctionEndDate }) {

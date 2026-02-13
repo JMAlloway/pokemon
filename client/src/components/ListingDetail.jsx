@@ -7,6 +7,7 @@ import { api } from '../utils/api';
 export default function ListingDetail({ listing, recentSoldListings: initialSold, onClose, onSave, saveStatus }) {
   const [soldComps, setSoldComps] = useState(initialSold || []);
   const [alsoFoundIn, setAlsoFoundIn] = useState([]);
+  const [scoreBreakdown, setScoreBreakdown] = useState(null);
 
   useEffect(() => {
     async function loadDetails() {
@@ -14,6 +15,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
         const data = await api.get(`/api/listings/${listing.ebayListingId}`);
         if (data.recentSoldListings) setSoldComps(data.recentSoldListings);
         if (data.alsoFoundIn) setAlsoFoundIn(data.alsoFoundIn);
+        if (data.scoreBreakdown) setScoreBreakdown(data.scoreBreakdown);
       } catch {
         // Use initial data
       }
@@ -88,6 +90,40 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
               </span>
             )}
           </div>
+
+          {/* Score breakdown */}
+          {scoreBreakdown && (
+            <div className="bg-bg-card border border-border rounded-lg p-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-3">
+                Score Breakdown
+              </h4>
+              <div className="space-y-2.5">
+                {scoreBreakdown.components.map((c, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-text-secondary">{c.label}</span>
+                      <span className={`text-sm font-bold ${c.points > 0 ? 'text-deal-green' : 'text-text-muted'}`}>
+                        +{c.points}/{c.max}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${c.points > 0 ? 'bg-accent' : 'bg-bg-tertiary'}`}
+                        style={{ width: `${(c.points / c.max) * 100}%` }}
+                      />
+                    </div>
+                    {c.detail && (
+                      <p className="text-xs text-text-muted mt-0.5">{c.detail}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                <span className="text-sm font-semibold text-text-secondary">Total</span>
+                <span className="text-lg font-bold text-text-primary">{scoreBreakdown.total}<span className="text-sm text-text-muted font-normal">/{scoreBreakdown.max}</span></span>
+              </div>
+            </div>
+          )}
 
           {/* Auction details */}
           {isAuction && (
