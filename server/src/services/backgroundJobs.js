@@ -7,6 +7,50 @@ import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore
 const runningJobs = new Map();
 let isProcessing = false;
 
+// Pattern to extract card numbers like "130/094", "13/94", "013/094"
+const CARD_NUMBER_RE = /\b(\d{1,3})\s*\/\s*(\d{2,3})\b/g;
+
+/**
+ * Extract a normalized card number from a string.
+ * "130/094" → "130/94", "013/094" → "13/94"
+ * Returns null if no card number found.
+ */
+function extractCardNumber(text) {
+  const match = text.match(CARD_NUMBER_RE);
+  if (!match) return null;
+  // Take the last match (card numbers often appear at the end of names)
+  const last = match[match.length - 1];
+  const parts = last.split(/\s*\/\s*/);
+  // Normalize: strip leading zeros to get canonical form
+  return `${parseInt(parts[0], 10)}/${parseInt(parts[1], 10)}`;
+}
+
+/**
+ * Filter eBay listings by card number relevance.
+ * When the search query contains a specific card number (e.g. "130/094"),
+ * only keep listings whose title contains the same card number.
+ * Listings with no card number in the title are also kept.
+ */
+function filterByCardNumber(listings, searchCardName) {
+  const searchNumber = extractCardNumber(searchCardName);
+  if (!searchNumber) return listings; // no card number in search → keep all
+
+  const before = listings.length;
+  const filtered = listings.filter(listing => {
+    const title = listing.listingTitle || listing.title || '';
+    const titleNumber = extractCardNumber(title);
+    // Keep if: title has no card number OR card number matches
+    if (!titleNumber) return true;
+    return titleNumber === searchNumber;
+  });
+
+  if (filtered.length < before) {
+    console.log(`[BackgroundJobs] Card number filter: kept ${filtered.length}/${before} listings matching ${searchNumber}`);
+  }
+
+  return filtered;
+}
+
 /**
  * Initialize all scheduled background jobs.
  */
@@ -116,6 +160,10 @@ export async function executeSearch(searchQuery) {
     // 1b. Fill missing shipping costs via batch getItems call
     const listingsWithShipping = await fillMissingShipping(listings);
 
+    // 1c. Filter by card number: if the user searched for a specific card number
+    //     (e.g. "130/094"), drop listings that have a *different* card number in the title
+    const relevantListings = filterByCardNumber(listingsWithShipping, searchQuery.cardName);
+
     // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
     let soldData = [];
 
@@ -155,9 +203,9 @@ export async function executeSearch(searchQuery) {
     const baseline = calculateRecencyWeightedBaseline(soldData);
 
     // 4. Analyze listings for typos
-    const analyzedListings = batchAnalyzeTitles(listingsWithShipping, searchQuery.cardName);
+    const analyzedListings = batchAnalyzeTitles(relevantListings, searchQuery.cardName);
 
-    // 5. Remove old sample data for this search if we got real results
+    // 5. Remove old sample data AND stale listings with wrong card numbers
     const hasRealListings = analyzedListings.some(l => !l.ebayListingId.startsWith('ebay_'));
     if (hasRealListings) {
       const deleted = await prisma.ebayListing.deleteMany({
@@ -168,6 +216,29 @@ export async function executeSearch(searchQuery) {
       });
       if (deleted.count > 0) {
         console.log(`[BackgroundJobs] Cleaned up ${deleted.count} sample listings for "${searchQuery.cardName}"`);
+      }
+    }
+
+    // 5b. Clean up previously stored listings with wrong card numbers
+    const searchNumber = extractCardNumber(searchQuery.cardName);
+    if (searchNumber) {
+      const currentIds = new Set(analyzedListings.map(l => l.ebayListingId));
+      const existingListings = await prisma.ebayListing.findMany({
+        where: { searchQueryId: searchQuery.id },
+        select: { ebayListingId: true, listingTitle: true }
+      });
+      const staleIds = existingListings
+        .filter(l => {
+          if (currentIds.has(l.ebayListingId)) return false;
+          const titleNumber = extractCardNumber(l.listingTitle);
+          return titleNumber && titleNumber !== searchNumber;
+        })
+        .map(l => l.ebayListingId);
+      if (staleIds.length > 0) {
+        await prisma.ebayListing.deleteMany({
+          where: { ebayListingId: { in: staleIds } }
+        });
+        console.log(`[BackgroundJobs] Removed ${staleIds.length} stale listings with wrong card numbers for "${searchQuery.cardName}"`);
       }
     }
 
