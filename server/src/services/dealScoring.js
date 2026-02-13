@@ -106,13 +106,26 @@ export function calculatePriceGap(baselinePrice, listingPrice) {
 
 /**
  * Calculate deal score (0-100).
- * Primary signal: typo presence (up to 50 points)
- * Secondary signal: price gap percentage (up to 50 points)
  *
- * @param {{ hasTypo: boolean, priceGapPercent: number|null, recencyScore: number, typoConfidenceScore: number|null }} params
+ * For FIXED_PRICE (Buy It Now):
+ *   Primary signal: typo presence (up to 50 points)
+ *   Secondary signal: price gap percentage (up to 50 points)
+ *   BIN listings with low price are the strongest deals.
+ *
+ * For AUCTION:
+ *   Scoring factors in time remaining, bid count, and price vs market.
+ *   - Auctions ending soon with low bids and below-market price = opportunity
+ *   - Auctions with many bids are competitive and less likely to be deals
+ *   - Score is generally lower than equivalent BIN since outcome is uncertain
+ *
+ * @param {{ hasTypo: boolean, priceGapPercent: number|null, recencyScore: number, typoConfidenceScore: number|null, buyingOption: string, bidCount: number|null, auctionEndDate: string|Date|null }} params
  * @returns {number} Deal score 0-100
  */
-export function calculateDealScore({ hasTypo, priceGapPercent, recencyScore = 50, typoConfidenceScore = null }) {
+export function calculateDealScore({ hasTypo, priceGapPercent, recencyScore = 50, typoConfidenceScore = null, buyingOption = 'FIXED_PRICE', bidCount = null, auctionEndDate = null }) {
+  if (buyingOption === 'AUCTION') {
+    return calculateAuctionDealScore({ hasTypo, priceGapPercent, recencyScore, typoConfidenceScore, bidCount, auctionEndDate });
+  }
+
   let score = 0;
 
   // Typo signal: 0-50 points
@@ -136,10 +149,86 @@ export function calculateDealScore({ hasTypo, priceGapPercent, recencyScore = 50
 }
 
 /**
+ * Calculate deal score for auction listings (0-100).
+ *
+ * Signals:
+ * 1. Time remaining: auctions ending in <6h with few bids = opportunity (up to 25 pts)
+ * 2. Bid competition: fewer bids = less competition = better chance (up to 25 pts)
+ * 3. Price gap: current bid vs market price (up to 30 pts)
+ * 4. Typo bonus: typos reduce visibility = less competition (up to 20 pts)
+ */
+function calculateAuctionDealScore({ hasTypo, priceGapPercent, recencyScore = 50, typoConfidenceScore = null, bidCount = 0, auctionEndDate = null }) {
+  let score = 0;
+  const bids = bidCount || 0;
+
+  // 1. Time remaining signal (0-25 points)
+  // Auctions ending soon with low competition are the best opportunities
+  if (auctionEndDate) {
+    const hoursRemaining = Math.max(0, (new Date(auctionEndDate) - new Date()) / (1000 * 60 * 60));
+
+    if (hoursRemaining <= 1) {
+      // Ending very soon — high urgency, high opportunity if low bids
+      score += bids <= 2 ? 25 : bids <= 5 ? 15 : 5;
+    } else if (hoursRemaining <= 6) {
+      score += bids <= 3 ? 20 : bids <= 8 ? 10 : 3;
+    } else if (hoursRemaining <= 24) {
+      score += bids <= 2 ? 12 : 5;
+    } else {
+      // Far out — less actionable
+      score += 3;
+    }
+  }
+
+  // 2. Bid competition signal (0-25 points)
+  // Fewer bids = less competition = better deal potential
+  if (bids === 0) {
+    score += 25;
+  } else if (bids <= 2) {
+    score += 18;
+  } else if (bids <= 5) {
+    score += 10;
+  } else if (bids <= 10) {
+    score += 4;
+  }
+  // 10+ bids = very competitive, no bonus
+
+  // 3. Price gap signal (0-30 points)
+  // Current bid vs market — bigger gap = more room for a deal
+  if (priceGapPercent !== null && priceGapPercent > 0) {
+    const gapScore = Math.min(30, Math.round(priceGapPercent * 0.6));
+    const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
+    score += Math.round(gapScore * confidenceMultiplier);
+  }
+
+  // 4. Typo bonus (0-20 points)
+  // Typos reduce auction visibility = less competition
+  if (hasTypo) {
+    const confidence = typoConfidenceScore || 70;
+    score += Math.round(10 + (confidence / 100) * 10);
+  }
+
+  return Math.min(100, Math.max(0, score));
+}
+
+/**
  * Generate human-readable deal summary.
  */
-export function getDealSummary({ hasTypo, typoDetails, priceGapPercent, recencyScore, sampleSize }) {
+export function getDealSummary({ hasTypo, typoDetails, priceGapPercent, recencyScore, sampleSize, buyingOption, bidCount, auctionEndDate }) {
   const parts = [];
+
+  if (buyingOption === 'AUCTION') {
+    parts.push('Auction');
+    if (auctionEndDate) {
+      const hoursRemaining = Math.max(0, (new Date(auctionEndDate) - new Date()) / (1000 * 60 * 60));
+      if (hoursRemaining <= 1) parts.push('Ending soon!');
+      else if (hoursRemaining <= 6) parts.push(`${Math.round(hoursRemaining)}h left`);
+      else if (hoursRemaining <= 24) parts.push(`${Math.round(hoursRemaining)}h left`);
+      else parts.push(`${Math.round(hoursRemaining / 24)}d left`);
+    }
+    if (bidCount !== null && bidCount !== undefined) {
+      parts.push(`${bidCount} bid${bidCount !== 1 ? 's' : ''}`);
+    }
+  }
 
   if (hasTypo) {
     parts.push(`Typo found${typoDetails ? `: ${typoDetails}` : ''}`);

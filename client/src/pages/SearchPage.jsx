@@ -6,6 +6,7 @@ import useSearchStore from '../store/searchStore';
 export default function SearchPage() {
   const { listings, recentSoldListings, isSearching, error, cached, cacheTimestamp, baseline, recencyScore, sampleSize, search, clearResults } = useSearchStore();
   const [sortBy, setSortBy] = useState('dealScore');
+  const [filterType, setFilterType] = useState('all'); // 'all', 'bin', 'auction'
 
   const handleSearch = async (params) => {
     try {
@@ -15,16 +16,30 @@ export default function SearchPage() {
     }
   };
 
-  const sortedListings = [...listings].sort((a, b) => {
+  const filteredListings = listings.filter(l => {
+    if (filterType === 'bin') return l.buyingOption !== 'AUCTION';
+    if (filterType === 'auction') return l.buyingOption === 'AUCTION';
+    return true;
+  });
+
+  const sortedListings = [...filteredListings].sort((a, b) => {
     if (sortBy === 'price') return Number(a.currentPrice) - Number(b.currentPrice);
     if (sortBy === 'priceGap') return (Number(b.priceGapPercent) || 0) - (Number(a.priceGapPercent) || 0);
     if (sortBy === 'typo') return (b.hasTypo ? 1 : 0) - (a.hasTypo ? 1 : 0) || (Number(b.dealScore) || 0) - (Number(a.dealScore) || 0);
+    if (sortBy === 'endingSoon') {
+      // Auctions ending soonest first, BIN at the end
+      const aEnd = a.auctionEndDate ? new Date(a.auctionEndDate).getTime() : Infinity;
+      const bEnd = b.auctionEndDate ? new Date(b.auctionEndDate).getTime() : Infinity;
+      return aEnd - bEnd;
+    }
     // Default: dealScore (typos first, then by gap)
     return (b.hasTypo ? 1000 : 0) + (Number(b.dealScore) || 0) - ((a.hasTypo ? 1000 : 0) + (Number(a.dealScore) || 0));
   });
 
   const typoCount = listings.filter(l => l.hasTypo).length;
   const dealsCount = listings.filter(l => Number(l.priceGapPercent) > 10).length;
+  const auctionCount = listings.filter(l => l.buyingOption === 'AUCTION').length;
+  const binCount = listings.filter(l => l.buyingOption !== 'AUCTION').length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -59,10 +74,30 @@ export default function SearchPage() {
         <div className="mt-6">
           {/* Stats bar */}
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <span className="text-sm text-text-secondary">
-                <span className="font-bold text-text-primary">{listings.length}</span> listings found
+                <span className="font-bold text-text-primary">{filteredListings.length}</span>{filterType !== 'all' ? ` of ${listings.length}` : ''} listings
               </span>
+              {/* Type filter chips */}
+              <div className="flex items-center gap-1">
+                {[
+                  { value: 'all', label: 'All' },
+                  { value: 'bin', label: `BIN (${binCount})` },
+                  { value: 'auction', label: `Auction (${auctionCount})` }
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFilterType(opt.value)}
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      filterType === opt.value
+                        ? opt.value === 'auction' ? 'bg-purple-500/15 text-purple-400 font-medium' : 'bg-accent/15 text-accent font-medium'
+                        : 'text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               {typoCount > 0 && (
                 <span className="text-sm text-typo-amber font-medium">
                   {typoCount} with typos
@@ -92,7 +127,8 @@ export default function SearchPage() {
                 { value: 'dealScore', label: 'Deal Score' },
                 { value: 'price', label: 'Price' },
                 { value: 'priceGap', label: 'Price Gap' },
-                { value: 'typo', label: 'Typos' }
+                { value: 'typo', label: 'Typos' },
+                { value: 'endingSoon', label: 'Ending Soon' }
               ].map(opt => (
                 <button
                   key={opt.value}

@@ -59,6 +59,10 @@ model EbayListing {
   images              String[]
   description         String?       @db.Text
   condition           String?       @db.VarChar(50)
+  buyingOption        BuyingOption  @default(FIXED_PRICE)
+  bidCount            Int?          @db.SmallInt
+  currentBidPrice     Decimal?      @db.Decimal(10, 2)
+  auctionEndDate      DateTime?
   listingStatus       ListingStatus @default(active)
   createdAt           DateTime      @default(now())
   lastCheckedAt       DateTime      @default(now())
@@ -70,6 +74,7 @@ model EbayListing {
   @@index([ebayListingId])
   @@index([listingStatus])
   @@index([dealScore(sort: Desc)])
+  @@index([buyingOption])
 }
 
 model SavedListing {
@@ -157,6 +162,11 @@ enum SearchFrequency {
   fourHourly
   daily
   weekly
+}
+
+enum BuyingOption {
+  FIXED_PRICE
+  AUCTION
 }
 
 enum ListingStatus {

@@ -174,7 +174,10 @@ export async function executeSearch(searchQuery) {
         hasTypo: listing.hasTypo,
         priceGapPercent,
         recencyScore: baseline.recencyScore,
-        typoConfidenceScore: listing.confidenceScore
+        typoConfidenceScore: listing.confidenceScore,
+        buyingOption: listing.buyingOption || 'FIXED_PRICE',
+        bidCount: listing.bidCount,
+        auctionEndDate: listing.auctionEndDate
       });
 
       // Upsert listing
@@ -200,6 +203,10 @@ export async function executeSearch(searchQuery) {
           images: listing.images || [],
           description: listing.description,
           condition: listing.condition,
+          buyingOption: listing.buyingOption || 'FIXED_PRICE',
+          bidCount: listing.bidCount,
+          currentBidPrice: listing.currentBidPrice,
+          auctionEndDate: listing.auctionEndDate,
           listingStatus: listing.listingStatus || 'active'
         },
         update: {
@@ -212,6 +219,10 @@ export async function executeSearch(searchQuery) {
           dealScore,
           recencyScore: baseline.recencyScore,
           sellerFeedbackPercent: listing.sellerFeedbackPercent,
+          buyingOption: listing.buyingOption || 'FIXED_PRICE',
+          bidCount: listing.bidCount,
+          currentBidPrice: listing.currentBidPrice,
+          auctionEndDate: listing.auctionEndDate,
           listingStatus: listing.listingStatus || 'active',
           lastCheckedAt: new Date()
         }

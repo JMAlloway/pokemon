@@ -338,22 +338,33 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
       return generateSampleListings(cardName, set, rarity, condition);
     }
 
-    const listings = data.itemSummaries.map(item => ({
-      ebayListingId: item.itemId,
-      listingTitle: item.title,
-      currentPrice: parseFloat(item.price?.value || 0),
-      currency: item.price?.currency || 'USD',
-      sellerName: item.seller?.username || null,
-      sellerRating: item.seller?.feedbackScore ? Math.min(5, item.seller.feedbackScore / 1000) : null,
-      sellerFeedbackPercent: item.seller?.feedbackPercentage ? parseFloat(item.seller.feedbackPercentage) : null,
-      listingUrl: item.itemWebUrl || item.itemHref || `https://www.ebay.com/itm/${item.itemId}`,
-      images: item.thumbnailImages
-        ? item.thumbnailImages.map(i => i.imageUrl)
-        : (item.image ? [item.image.imageUrl] : []),
-      description: item.shortDescription || null,
-      condition: item.condition || null,
-      listingStatus: 'active'
-    }));
+    const listings = data.itemSummaries.map(item => {
+      // Determine buying option: eBay returns buyingOptions as array like ["FIXED_PRICE"] or ["AUCTION"]
+      const buyingOptions = item.buyingOptions || [];
+      const isAuction = buyingOptions.includes('AUCTION');
+      const buyingOption = isAuction ? 'AUCTION' : 'FIXED_PRICE';
+
+      return {
+        ebayListingId: item.itemId,
+        listingTitle: item.title,
+        currentPrice: parseFloat(item.price?.value || 0),
+        currency: item.price?.currency || 'USD',
+        sellerName: item.seller?.username || null,
+        sellerRating: item.seller?.feedbackScore ? Math.min(5, item.seller.feedbackScore / 1000) : null,
+        sellerFeedbackPercent: item.seller?.feedbackPercentage ? parseFloat(item.seller.feedbackPercentage) : null,
+        listingUrl: item.itemWebUrl || item.itemHref || `https://www.ebay.com/itm/${item.itemId}`,
+        images: item.thumbnailImages
+          ? item.thumbnailImages.map(i => i.imageUrl)
+          : (item.image ? [item.image.imageUrl] : []),
+        description: item.shortDescription || null,
+        condition: item.condition || null,
+        listingStatus: 'active',
+        buyingOption,
+        bidCount: isAuction ? (item.bidCount || 0) : null,
+        currentBidPrice: isAuction ? parseFloat(item.currentBidPrice?.value || item.price?.value || 0) : null,
+        auctionEndDate: item.itemEndDate ? new Date(item.itemEndDate) : null
+      };
+    });
 
     console.log(`[eBay API] Found ${listings.length} listings for "${cardName}"`);
     return listings;
@@ -518,10 +529,16 @@ function generateSampleListings(cardName, set, rarity, condition) {
     const price = Math.max(0.99, Math.round((basePrice + priceVariation) * 100) / 100);
     const sellerFeedback = 85 + Math.random() * 15;
 
+    // Make ~25% of listings auctions
+    const isAuction = i >= 6;
+    const auctionEndDate = isAuction ? new Date(Date.now() + (Math.random() * 6 + 0.5) * 24 * 60 * 60 * 1000) : null;
+    const bidCount = isAuction ? Math.floor(Math.random() * 15) : null;
+    const auctionPrice = isAuction ? Math.max(0.99, Math.round(price * (0.4 + Math.random() * 0.4) * 100) / 100) : null;
+
     listings.push({
       ebayListingId: `ebay_${cardName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}_${i}`,
       listingTitle: `Pokemon ${cardName}${set ? ' ' + set : ''} Card ${getRandomCardSuffix()}`,
-      currentPrice: price,
+      currentPrice: isAuction ? auctionPrice : price,
       currency: 'USD',
       sellerName: `seller_${Math.random().toString(36).substr(2, 8)}`,
       sellerRating: Math.round((3 + Math.random() * 2) * 10) / 10,
@@ -530,7 +547,11 @@ function generateSampleListings(cardName, set, rarity, condition) {
       images: [`https://placehold.co/400x560/1a1a2e/e0e0e0?text=${encodeURIComponent(cardName)}`],
       description: `${cardName} Pokemon Trading Card Game card${set ? ' from ' + set + ' set' : ''}. ${condition || 'Near Mint'} condition.`,
       condition: condition || 'Near Mint',
-      listingStatus: 'active'
+      listingStatus: 'active',
+      buyingOption: isAuction ? 'AUCTION' : 'FIXED_PRICE',
+      bidCount,
+      currentBidPrice: auctionPrice,
+      auctionEndDate
     });
   }
 

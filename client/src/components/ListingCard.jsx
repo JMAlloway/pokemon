@@ -34,6 +34,19 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
   // Determine if this listing has a note
   const hasTypoButExpensive = listing.hasTypo && listing.priceGapPercent !== null && Number(listing.priceGapPercent) <= 0;
   const noSoldData = !listing.recentSoldPrice;
+  const isAuction = listing.buyingOption === 'AUCTION';
+
+  // Calculate time remaining for auctions
+  const getTimeRemaining = () => {
+    if (!listing.auctionEndDate) return null;
+    const ms = new Date(listing.auctionEndDate) - new Date();
+    if (ms <= 0) return 'Ended';
+    const hours = ms / (1000 * 60 * 60);
+    if (hours < 1) return `${Math.round(ms / (1000 * 60))}m`;
+    if (hours < 24) return `${Math.round(hours)}h`;
+    return `${Math.round(hours / 24)}d ${Math.round(hours % 24)}h`;
+  };
+  const timeRemaining = isAuction ? getTimeRemaining() : null;
 
   return (
     <>
@@ -72,7 +85,16 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
                 <h3 className="text-sm font-semibold text-text-primary truncate" title={listing.listingTitle}>
                   {listing.listingTitle}
                 </h3>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {isAuction ? (
+                    <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400">
+                      Auction
+                    </span>
+                  ) : (
+                    <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+                      BIN
+                    </span>
+                  )}
                   <span className="text-xs text-text-secondary">{listing.cardName}</span>
                   {listing.condition && (
                     <span className="text-xs text-text-muted">· {listing.condition}</span>
@@ -82,6 +104,18 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
                     details={listing.typoDetails}
                     confidence={listing.typoConfidenceScore}
                   />
+                  {isAuction && (
+                    <span className="flex items-center gap-1 text-xs text-text-muted">
+                      {listing.bidCount !== null && listing.bidCount !== undefined && (
+                        <span>{listing.bidCount} bid{listing.bidCount !== 1 ? 's' : ''}</span>
+                      )}
+                      {timeRemaining && (
+                        <span className={`font-medium ${timeRemaining === 'Ended' ? 'text-error' : new Date(listing.auctionEndDate) - new Date() < 6 * 60 * 60 * 1000 ? 'text-warning' : 'text-text-muted'}`}>
+                          · {timeRemaining} left
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
               <PriceDisplay

@@ -28,6 +28,21 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
   }, [onClose]);
 
   const gap = listing.priceGapPercent !== null ? Number(listing.priceGapPercent) : null;
+  const isAuction = listing.buyingOption === 'AUCTION';
+
+  const getTimeRemaining = () => {
+    if (!listing.auctionEndDate) return null;
+    const ms = new Date(listing.auctionEndDate) - new Date();
+    if (ms <= 0) return { label: 'Ended', urgent: true };
+    const hours = ms / (1000 * 60 * 60);
+    if (hours < 1) return { label: `${Math.round(ms / (1000 * 60))} minutes`, urgent: true };
+    if (hours < 6) return { label: `${Math.round(hours)} hours`, urgent: true };
+    if (hours < 24) return { label: `${Math.round(hours)} hours`, urgent: false };
+    const days = Math.floor(hours / 24);
+    const remainingHours = Math.round(hours % 24);
+    return { label: `${days}d ${remainingHours}h`, urgent: false };
+  };
+  const timeInfo = isAuction ? getTimeRemaining() : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" role="dialog" aria-modal="true" aria-label="Listing details">
@@ -74,15 +89,59 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
             )}
           </div>
 
+          {/* Auction details */}
+          {isAuction && (
+            <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-purple-400">Auction</span>
+                {timeInfo && (
+                  <span className={`text-sm font-bold ${timeInfo.urgent ? 'text-warning' : 'text-text-secondary'}`}>
+                    {timeInfo.label === 'Ended' ? 'Ended' : `${timeInfo.label} remaining`}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs text-text-muted">Current Bid</p>
+                  <p className="text-lg font-bold text-text-primary">
+                    ${Number(listing.currentBidPrice || listing.currentPrice).toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted">Bids</p>
+                  <p className="text-lg font-bold text-text-primary">
+                    {listing.bidCount ?? 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted">Market Avg</p>
+                  <p className="text-lg font-bold text-text-secondary">
+                    {listing.recentSoldPrice ? `$${Number(listing.recentSoldPrice).toFixed(2)}` : 'N/A'}
+                  </p>
+                </div>
+              </div>
+              {listing.bidCount !== null && listing.bidCount <= 2 && gap !== null && gap > 10 && (
+                <p className="text-xs text-deal-green mt-2 font-medium">
+                  Low competition with below-market price — potential opportunity
+                </p>
+              )}
+              {listing.bidCount !== null && listing.bidCount > 8 && (
+                <p className="text-xs text-warning mt-2">
+                  High bid activity — final price may exceed current bid
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Title and price */}
           <div className="space-y-2">
             <h3 className="text-sm text-text-secondary">{listing.listingTitle}</h3>
             <div className="flex items-baseline gap-4">
               <div>
                 <span className="text-2xl font-bold text-text-primary">${Number(listing.currentPrice).toFixed(2)}</span>
-                <span className="text-sm text-text-muted ml-1">current</span>
+                <span className="text-sm text-text-muted ml-1">{isAuction ? 'current bid' : 'current'}</span>
               </div>
-              {listing.recentSoldPrice && (
+              {listing.recentSoldPrice && !isAuction && (
                 <div>
                   <span className="text-lg text-text-secondary">${Number(listing.recentSoldPrice).toFixed(2)}</span>
                   <span className="text-sm text-text-muted ml-1">market avg</span>
