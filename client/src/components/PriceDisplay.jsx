@@ -1,7 +1,8 @@
-export default function PriceDisplay({ price, shippingCost, baseline, gapPercent, showGap = true }) {
+export default function PriceDisplay({ price, shippingCost, shippingEstimated, baseline, gapPercent, showGap = true }) {
   const priceNum = Number(price);
   const shippingNum = shippingCost !== null && shippingCost !== undefined ? Number(shippingCost) : null;
   const shippingKnown = shippingNum !== null;
+  const isEstimated = shippingEstimated === true;
   const totalNum = shippingKnown ? priceNum + shippingNum : priceNum;
   const hasShipping = shippingKnown && shippingNum > 0;
   const baselineNum = baseline ? Number(baseline) : null;
@@ -11,14 +12,20 @@ export default function PriceDisplay({ price, shippingCost, baseline, gapPercent
     <div className="flex flex-col items-end">
       <span className="text-base font-bold text-text-primary">${priceNum.toFixed(2)}</span>
       {shippingKnown ? (
-        <span className="text-xs text-text-muted">
-          {shippingNum === 0 ? 'Free shipping' : `+$${shippingNum.toFixed(2)} ship`}
+        <span className={`text-xs ${isEstimated ? 'text-text-muted/70 italic' : 'text-text-muted'}`}>
+          {shippingNum === 0
+            ? 'Free shipping'
+            : isEstimated
+              ? `~$${shippingNum.toFixed(2)} ship (est.)`
+              : `+$${shippingNum.toFixed(2)} ship`}
         </span>
       ) : (
         <span className="text-xs text-warning">shipping unknown</span>
       )}
       {hasShipping && (
-        <span className="text-xs font-semibold text-text-secondary">${totalNum.toFixed(2)} total</span>
+        <span className={`text-xs font-semibold ${isEstimated ? 'text-text-secondary/70' : 'text-text-secondary'}`}>
+          {isEstimated ? '~' : ''}${totalNum.toFixed(2)} total
+        </span>
       )}
       {baselineNum && showGap && (
         <div className="flex items-center gap-1.5 mt-0.5">

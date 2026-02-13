@@ -121,6 +121,7 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
               <PriceDisplay
                 price={isAuction ? (listing.currentBidPrice || listing.currentPrice) : listing.currentPrice}
                 shippingCost={listing.shippingCost}
+                shippingEstimated={listing.shippingEstimated}
                 baseline={listing.recentSoldPrice}
                 gapPercent={listing.priceGapPercent}
               />

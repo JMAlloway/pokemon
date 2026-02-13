@@ -180,7 +180,7 @@ export async function executeSearch(searchQuery) {
       const shippingKnown = listing.shippingCost != null;
       const shipping = shippingKnown ? Number(listing.shippingCost) : 0;
       const totalPrice = effectivePrice + shipping;
-      // Only calculate price gap if we know the full cost (shipping included)
+      // Calculate price gap if we know or estimated shipping
       const priceGapPercent = baseline.weightedPrice && shippingKnown
         ? calculatePriceGap(baseline.weightedPrice, totalPrice)
         : null;
@@ -223,6 +223,7 @@ export async function executeSearch(searchQuery) {
           currentBidPrice: listing.currentBidPrice,
           auctionEndDate: listing.auctionEndDate,
           shippingCost: listing.shippingCost,
+          shippingEstimated: listing.shippingEstimated || false,
           listingStatus: listing.listingStatus || 'active'
         },
         update: {
@@ -240,6 +241,7 @@ export async function executeSearch(searchQuery) {
           currentBidPrice: listing.currentBidPrice,
           auctionEndDate: listing.auctionEndDate,
           shippingCost: listing.shippingCost,
+          shippingEstimated: listing.shippingEstimated || false,
           listingStatus: listing.listingStatus || 'active',
           lastCheckedAt: new Date()
         }

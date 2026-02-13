@@ -527,19 +527,42 @@ export async function fillMissingShipping(listings) {
     }
   }
 
-  if (shippingMap.size === 0) {
-    console.log(`[eBay API] Could not retrieve shipping for any of the ${needsShipping.length} items`);
-    return listings;
-  }
+  console.log(`[eBay API] Fetched shipping for ${shippingMap.size}/${needsShipping.length} items via API`);
 
-  console.log(`[eBay API] Filled shipping for ${shippingMap.size}/${needsShipping.length} items`);
-
-  return listings.map(l => {
+  // Apply fetched shipping
+  let result = listings.map(l => {
     if (l.shippingCost === null && shippingMap.has(l.ebayListingId)) {
       return { ...l, shippingCost: shippingMap.get(l.ebayListingId) };
     }
     return l;
   });
+
+  // Estimate shipping for any items still missing, using median of known costs.
+  // Pokemon cards ship in a tight range ($0-$5), so median is a reliable estimate.
+  const knownShipping = result
+    .filter(l => l.shippingCost !== null)
+    .map(l => Number(l.shippingCost))
+    .filter(c => c > 0); // exclude free shipping from the median calc
+
+  const stillUnknown = result.filter(l => l.shippingCost === null && !l.ebayListingId.startsWith('ebay_'));
+
+  if (stillUnknown.length > 0 && knownShipping.length >= 3) {
+    knownShipping.sort((a, b) => a - b);
+    const median = knownShipping[Math.floor(knownShipping.length / 2)];
+    const estimate = Math.round(median * 100) / 100;
+
+    console.log(`[eBay API] Estimating shipping at $${estimate.toFixed(2)} (median) for ${stillUnknown.length} remaining items`);
+
+    const unknownIds = new Set(stillUnknown.map(l => l.ebayListingId));
+    result = result.map(l => {
+      if (unknownIds.has(l.ebayListingId)) {
+        return { ...l, shippingCost: estimate, shippingEstimated: true };
+      }
+      return l;
+    });
+  }
+
+  return result;
 }
 
 /**

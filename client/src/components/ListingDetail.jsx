@@ -143,7 +143,9 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                     ${Number(listing.currentBidPrice || listing.currentPrice).toFixed(2)}
                   </p>
                   {listing.shippingCost !== null && listing.shippingCost !== undefined && Number(listing.shippingCost) > 0 && (
-                    <p className="text-xs text-text-muted">+${Number(listing.shippingCost).toFixed(2)} ship</p>
+                    <p className={`text-xs ${listing.shippingEstimated ? 'text-text-muted/70 italic' : 'text-text-muted'}`}>
+                      {listing.shippingEstimated ? '~' : '+'}${Number(listing.shippingCost).toFixed(2)} ship{listing.shippingEstimated ? ' (est.)' : ''}
+                    </p>
                   )}
                 </div>
                 <div>
