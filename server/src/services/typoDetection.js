@@ -3,6 +3,7 @@ import prisma from '../db.js';
 
 // Common Pokemon card name misspellings to seed and detect
 const KNOWN_POKEMON_NAMES = [
+  // Popular / high-value (original list)
   'Charizard', 'Pikachu', 'Mewtwo', 'Blastoise', 'Venusaur', 'Lugia',
   'Rayquaza', 'Umbreon', 'Espeon', 'Gengar', 'Dragonite', 'Gyarados',
   'Alakazam', 'Machamp', 'Arcanine', 'Ninetales', 'Eevee', 'Snorlax',
@@ -18,7 +19,37 @@ const KNOWN_POKEMON_NAMES = [
   'Absol', 'Blaziken', 'Swampert', 'Sceptile', 'Milotic',
   'Flygon', 'Aggron', 'Wailord', 'Sharpedo', 'Camerupt',
   'Luxray', 'Staraptor', 'Infernape', 'Torterra', 'Empoleon',
-  'Darkrai', 'Shaymin', 'Cresselia', 'Heatran', 'Regigigas'
+  'Darkrai', 'Shaymin', 'Cresselia', 'Heatran', 'Regigigas',
+  // Phantasmal Flames (ME02) — full set coverage
+  'Oddish', 'Gloom', 'Vileplume',
+  'Lotad', 'Lombre', 'Ludicolo',
+  'Genesect', 'Nymble', 'Lokix',
+  'Charmander', 'Charmeleon',
+  'Darumaka', 'Darmanitan',
+  'Oricorio', 'Charcadet', 'Ceruledge',
+  'Seel', 'Dewgong',
+  'Swinub', 'Piloswine', 'Mamoswine',
+  'Piplup', 'Prinplup',
+  'Rotom', 'Yamper', 'Boltund',
+  'Pawmi', 'Pawmo', 'Pawmot',
+  'Misdreavus', 'Mismagius',
+  'Snubbull', 'Granbull',
+  'Meloetta', 'Diancie',
+  'Milcery', 'Alcremie',
+  'Zacian', 'Bramblin', 'Brambleghast',
+  'Tauros', 'Gligar', 'Gliscor',
+  'Trapinch', 'Vibrava',
+  'Gastly', 'Haunter',
+  'Murkrow', 'Honchkrow',
+  'Carvanha', 'Seviper',
+  'Wooper', 'Clodsire',
+  'Sandile', 'Krookodile',
+  'Toxel', 'Bronzor', 'Bronzong',
+  'Togedemaru', 'Duraludon', 'Archaludon',
+  'Jigglypuff', 'Wigglytuff',
+  'Meowth', 'Ambipom',
+  'Zigzagoon', 'Linoone',
+  'Starly', 'Lopunny'
 ];
 
 /**

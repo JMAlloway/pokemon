@@ -35,7 +35,8 @@ const POKEMON_SETS = [
   'Silver Tempest', 'Crown Zenith',
   'Scarlet & Violet', 'Paldea Evolved', 'Obsidian Flames', '151',
   'Paradox Rift', 'Paldean Fates', 'Temporal Forces', 'Twilight Masquerade',
-  'Shrouded Fable', 'Stellar Crown', 'Surging Sparks', 'Prismatic Evolutions'
+  'Shrouded Fable', 'Stellar Crown', 'Surging Sparks', 'Prismatic Evolutions',
+  'Mega Evolution', 'Phantasmal Flames'
 ];
 
 const CARD_TYPES = ['V', 'VMAX', 'VSTAR', 'ex', 'EX', 'GX', 'Tag Team', 'BREAK',
