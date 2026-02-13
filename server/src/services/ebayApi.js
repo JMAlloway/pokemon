@@ -504,6 +504,9 @@ export async function fillMissingShipping(listings) {
 
   const shippingMap = new Map();
   const CONCURRENCY = 5;
+  const INTER_BATCH_DELAY_MS = 250; // Throttle to avoid rate limits
+  const MAX_RATE_LIMIT_WAITS = 3;   // Give up after 3 rate-limit pauses
+  let rateLimitWaits = 0;
 
   // Process items in concurrent batches of CONCURRENCY
   for (let i = 0; i < needsShipping.length; i += CONCURRENCY) {
@@ -528,13 +531,30 @@ export async function fillMissingShipping(listings) {
       )
     );
 
-    // If we hit a rate limit, stop fetching more
-    const rateLimited = results.some(r =>
+    // If we hit a rate limit, wait it out and keep going (up to MAX_RATE_LIMIT_WAITS times)
+    const rateLimitedResult = results.find(r =>
       r.status === 'rejected' && r.reason?.statusCode === 429
     );
-    if (rateLimited) {
-      console.warn(`[eBay API] Rate limited during shipping fetch, stopping after ${i + CONCURRENCY} items`);
-      break;
+    if (rateLimitedResult) {
+      rateLimitWaits++;
+      if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) {
+        console.warn(`[eBay API] Rate limited ${rateLimitWaits} times during shipping fetch, stopping after ${i + CONCURRENCY}/${needsShipping.length} items`);
+        break;
+      }
+      const waitMs = rateLimitedResult.reason?.retryAfterMs || 10000;
+      const waitSec = Math.round(waitMs / 1000);
+      console.log(`[eBay API] Rate limited during shipping fetch (${rateLimitWaits}/${MAX_RATE_LIMIT_WAITS}), waiting ${waitSec}s before continuing...`);
+      // Clear the rate limit cooldown so ebayFetch won't immediately reject
+      RATE_LIMIT.rateLimitedUntil = null;
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+      // Retry the items from this batch that failed
+      i -= CONCURRENCY;
+      continue;
+    }
+
+    // Small delay between batches to stay under rate limits
+    if (i + CONCURRENCY < needsShipping.length) {
+      await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
     }
   }
 
