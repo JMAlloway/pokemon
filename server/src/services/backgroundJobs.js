@@ -242,8 +242,8 @@ export async function executeSearch(searchQuery) {
       }
     }
 
-    // 6. Score all listings, then keep only the top 50 by deal score
-    const MAX_STORED_LISTINGS = 50;
+    // 6. Score all listings, then keep the top 50 BIN + top 50 Auction by deal score
+    const MAX_PER_TYPE = 50;
 
     const scoredListings = analyzedListings.map(listing => {
       const effectivePrice = listing.buyingOption === 'AUCTION'
@@ -269,12 +269,20 @@ export async function executeSearch(searchQuery) {
       return { listing, effectivePrice, priceGapPercent, dealScore };
     });
 
-    // Sort by deal score descending and take the top results
-    scoredListings.sort((a, b) => b.dealScore - a.dealScore);
-    const topListings = scoredListings.slice(0, MAX_STORED_LISTINGS);
+    // Split by buying option, sort each by score, take top 50 of each
+    const binListings = scoredListings
+      .filter(s => (s.listing.buyingOption || 'FIXED_PRICE') === 'FIXED_PRICE')
+      .sort((a, b) => b.dealScore - a.dealScore)
+      .slice(0, MAX_PER_TYPE);
+    const auctionListings = scoredListings
+      .filter(s => s.listing.buyingOption === 'AUCTION')
+      .sort((a, b) => b.dealScore - a.dealScore)
+      .slice(0, MAX_PER_TYPE);
+    const topListings = [...binListings, ...auctionListings];
 
-    if (scoredListings.length > MAX_STORED_LISTINGS) {
-      console.log(`[BackgroundJobs] Scored ${scoredListings.length} listings, keeping top ${MAX_STORED_LISTINGS} by deal score`);
+    const totalScored = scoredListings.length;
+    if (totalScored > topListings.length) {
+      console.log(`[BackgroundJobs] Scored ${totalScored} listings, keeping top ${binListings.length} BIN + ${auctionListings.length} Auction by deal score`);
     }
 
     // Store only the top listings
