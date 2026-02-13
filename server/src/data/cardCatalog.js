@@ -16,6 +16,7 @@ const CARD_CATALOG = [
     name: 'Prismatic Evolutions',
     code: 'SV8.5',
     era: 'Scarlet & Violet',
+    printedTotal: '091',
     cards: [
       // Common
       { name: 'Eevee', number: '054', rarity: 'common' },
@@ -78,6 +79,7 @@ const CARD_CATALOG = [
     name: 'Mega Evolution',
     code: 'SV8a',
     era: 'Scarlet & Violet',
+    printedTotal: '096',
     cards: [
       // Common
       { name: 'Bulbasaur', number: '001', rarity: 'common' },
@@ -137,6 +139,7 @@ const CARD_CATALOG = [
     name: 'Phantasmal Flames',
     code: 'SV8b',
     era: 'Scarlet & Violet',
+    printedTotal: '081',
     cards: [
       // Common
       { name: 'Oddish', number: '001', rarity: 'common' },
@@ -240,6 +243,7 @@ const CARD_CATALOG = [
     name: 'Surging Sparks',
     code: 'SV7',
     era: 'Scarlet & Violet',
+    printedTotal: '191',
     cards: [
       // Common
       { name: 'Bellsprout', number: '001', rarity: 'common' },
@@ -304,6 +308,7 @@ const CARD_CATALOG = [
     name: 'Stellar Crown',
     code: 'SV7.5',
     era: 'Scarlet & Violet',
+    printedTotal: '081',
     cards: [
       // Common
       { name: 'Caterpie', number: '001', rarity: 'common' },
@@ -345,6 +350,7 @@ const CARD_CATALOG = [
     name: 'Shrouded Fable',
     code: 'SV6.5',
     era: 'Scarlet & Violet',
+    printedTotal: '064',
     cards: [
       // Common
       { name: 'Cottonee', number: '001', rarity: 'common' },
@@ -384,6 +390,7 @@ const CARD_CATALOG = [
     name: 'Twilight Masquerade',
     code: 'SV6',
     era: 'Scarlet & Violet',
+    printedTotal: '167',
     cards: [
       // Common
       { name: 'Seedot', number: '001', rarity: 'common' },
@@ -430,6 +437,7 @@ const CARD_CATALOG = [
     name: 'Temporal Forces',
     code: 'SV5',
     era: 'Scarlet & Violet',
+    printedTotal: '162',
     cards: [
       // Common
       { name: 'Oddish', number: '001', rarity: 'common' },
@@ -472,6 +480,7 @@ const CARD_CATALOG = [
     name: 'Paldean Fates',
     code: 'SV4.5',
     era: 'Scarlet & Violet',
+    printedTotal: '091',
     cards: [
       // Common
       { name: 'Smoliv', number: '001', rarity: 'common' },
@@ -514,6 +523,7 @@ const CARD_CATALOG = [
     name: 'Paradox Rift',
     code: 'SV4',
     era: 'Scarlet & Violet',
+    printedTotal: '182',
     cards: [
       // Common
       { name: 'Pineco', number: '001', rarity: 'common' },
@@ -556,6 +566,7 @@ const CARD_CATALOG = [
     name: '151',
     code: 'SV3.5',
     era: 'Scarlet & Violet',
+    printedTotal: '165',
     cards: [
       // Common
       { name: 'Bulbasaur', number: '001', rarity: 'common' },
@@ -630,6 +641,7 @@ const CARD_CATALOG = [
     name: 'Obsidian Flames',
     code: 'SV3',
     era: 'Scarlet & Violet',
+    printedTotal: '197',
     cards: [
       // Common
       { name: 'Oddish', number: '001', rarity: 'common' },
@@ -671,6 +683,7 @@ const CARD_CATALOG = [
     name: 'Paldea Evolved',
     code: 'SV2',
     era: 'Scarlet & Violet',
+    printedTotal: '193',
     cards: [
       // Common
       { name: 'Petilil', number: '001', rarity: 'common' },
@@ -711,6 +724,7 @@ const CARD_CATALOG = [
     name: 'Scarlet & Violet',
     code: 'SV1',
     era: 'Scarlet & Violet',
+    printedTotal: '198',
     cards: [
       // Common
       { name: 'Sprigatito', number: '013', rarity: 'common' },
@@ -762,6 +776,7 @@ const CARD_CATALOG = [
     name: 'Crown Zenith',
     code: 'SWSH12.5',
     era: 'Sword & Shield',
+    printedTotal: '070',
     cards: [
       { name: 'Pikachu VMAX', number: '023', rarity: 'ultraRare' },
       { name: 'Mewtwo VSTAR', number: '030', rarity: 'ultraRare' },
@@ -783,6 +798,7 @@ const CARD_CATALOG = [
     name: 'Evolving Skies',
     code: 'SWSH7',
     era: 'Sword & Shield',
+    printedTotal: '203',
     cards: [
       // Common
       { name: 'Eevee', number: '120', rarity: 'common' },
@@ -842,6 +858,7 @@ const CARD_CATALOG = [
     name: 'Brilliant Stars',
     code: 'SWSH9',
     era: 'Sword & Shield',
+    printedTotal: '172',
     cards: [
       // Common
       { name: 'Magikarp', number: '026', rarity: 'common' },
@@ -878,6 +895,7 @@ const CARD_CATALOG = [
     name: 'Hidden Fates',
     code: 'SM11.5',
     era: 'Sun & Moon',
+    printedTotal: '069',
     cards: [
       // Ultra Rare
       { name: 'Charizard GX', number: 'SV49', rarity: 'ultraRare' },
@@ -899,6 +917,7 @@ const CARD_CATALOG = [
     name: 'Base Set',
     code: 'BS',
     era: 'Classic',
+    printedTotal: '102',
     cards: [
       // Common
       { name: 'Charmander', number: '046', rarity: 'common' },
@@ -940,6 +959,7 @@ const CARD_CATALOG = [
     name: 'Evolutions',
     code: 'XY12',
     era: 'XY',
+    printedTotal: '108',
     cards: [
       // Common
       { name: 'Charmander', number: '009', rarity: 'common' },
@@ -974,6 +994,7 @@ const CARD_CATALOG = [
     name: 'Shining Fates',
     code: 'SWSH4.5',
     era: 'Sword & Shield',
+    printedTotal: '073',
     cards: [
       { name: 'Charizard VMAX', number: 'SV107', rarity: 'ultraRare' },
       { name: 'Charizard V', number: 'SV106', rarity: 'ultraRare' },
@@ -988,6 +1009,7 @@ const CARD_CATALOG = [
     name: 'Lost Origin',
     code: 'SWSH11',
     era: 'Sword & Shield',
+    printedTotal: '196',
     cards: [
       { name: 'Giratina V', number: '130', rarity: 'ultraRare' },
       { name: 'Giratina VSTAR', number: '131', rarity: 'ultraRare' },
@@ -1003,6 +1025,7 @@ const CARD_CATALOG = [
     name: 'Silver Tempest',
     code: 'SWSH12',
     era: 'Sword & Shield',
+    printedTotal: '195',
     cards: [
       { name: 'Lugia V', number: '138', rarity: 'ultraRare' },
       { name: 'Lugia VSTAR', number: '139', rarity: 'ultraRare' },
@@ -1016,6 +1039,7 @@ const CARD_CATALOG = [
     name: 'Vivid Voltage',
     code: 'SWSH4',
     era: 'Sword & Shield',
+    printedTotal: '185',
     cards: [
       { name: 'Pikachu VMAX', number: '044', rarity: 'ultraRare' },
       { name: 'Pikachu V', number: '043', rarity: 'ultraRare' },
@@ -1030,6 +1054,7 @@ const CARD_CATALOG = [
     name: 'Astral Radiance',
     code: 'SWSH10',
     era: 'Sword & Shield',
+    printedTotal: '189',
     cards: [
       { name: 'Palkia V', number: '039', rarity: 'ultraRare' },
       { name: 'Palkia VSTAR', number: '040', rarity: 'ultraRare' },
@@ -1046,6 +1071,7 @@ const CARD_CATALOG = [
     name: 'Fusion Strike',
     code: 'SWSH8',
     era: 'Sword & Shield',
+    printedTotal: '264',
     cards: [
       { name: 'Mew V', number: '113', rarity: 'ultraRare' },
       { name: 'Mew VMAX', number: '114', rarity: 'ultraRare' },
@@ -1068,6 +1094,7 @@ const CARD_CATALOG = [
     name: 'Chilling Reign',
     code: 'SWSH6',
     era: 'Sword & Shield',
+    printedTotal: '198',
     cards: [
       { name: 'Blaziken V', number: '020', rarity: 'ultraRare' },
       { name: 'Blaziken VMAX', number: '021', rarity: 'ultraRare' },
@@ -1092,6 +1119,7 @@ const CARD_CATALOG = [
     name: 'Battle Styles',
     code: 'SWSH5',
     era: 'Sword & Shield',
+    printedTotal: '163',
     cards: [
       { name: 'Tyranitar V', number: '097', rarity: 'ultraRare' },
       { name: 'Tyranitar VMAX', number: '098', rarity: 'ultraRare' },

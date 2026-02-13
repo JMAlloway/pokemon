@@ -137,7 +137,9 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
     let cards = selectedSet.cards;
     if (cardQuery.trim()) {
       const q = cardQuery.toLowerCase();
-      cards = cards.filter(c => c.name.toLowerCase().includes(q));
+      cards = cards.filter(c =>
+        c.name.toLowerCase().includes(q) || c.number.includes(q)
+      );
     }
     const groups = {};
     for (const card of cards) {
@@ -168,8 +170,9 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
   };
 
   const handleSelectCard = (card) => {
-    setCardName(card.name);
-    setCardQuery(`${card.name} #${card.number}`);
+    const fullNumber = card.number + (selectedSet?.printedTotal ? `/${selectedSet.printedTotal}` : '');
+    setCardName(`${card.name} ${fullNumber}`);
+    setCardQuery(`${card.name} ${fullNumber}`);
     setRarity(card.rarity);
     setShowCardDropdown(false);
   };
@@ -319,7 +322,7 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
                   className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 max-h-72 overflow-y-auto"
                 >
                   <div className="px-3 py-1.5 text-xs text-text-muted border-b border-border">
-                    {totalFilteredCards} card{totalFilteredCards !== 1 ? 's' : ''}
+                    {totalFilteredCards} card{totalFilteredCards !== 1 ? 's' : ''}{selectedSet?.printedTotal ? ` (set base: ${parseInt(selectedSet.printedTotal, 10)})` : ''}
                   </div>
                   {sortedRarityKeys.map(rarityKey => (
                     <div key={rarityKey}>
@@ -334,7 +337,7 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
                           className="w-full text-left px-3 py-1.5 text-sm text-text-primary hover:bg-bg-tertiary transition-colors flex justify-between items-center"
                         >
                           <span>{card.name}</span>
-                          <span className="text-text-muted text-xs">#{card.number}</span>
+                          <span className="text-text-muted text-xs">{card.number}{selectedSet?.printedTotal ? `/${selectedSet.printedTotal}` : ''}</span>
                         </button>
                       ))}
                     </div>
