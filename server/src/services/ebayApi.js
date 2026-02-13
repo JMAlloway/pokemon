@@ -279,7 +279,7 @@ const POKEMON_CARDS_CATEGORY = '183454';
  * Search eBay for active Pokemon card listings.
  * Uses Browse API /buy/browse/v1/item_summary/search
  */
-export async function searchListings({ cardName, set, rarity, condition, graded, language, limit = 200 }) {
+export async function searchListings({ cardName, set, rarity, condition, graded, language }) {
   // Use the card name directly — category_ids scopes to Pokemon cards
   // so we don't need to prepend "Pokemon card" which over-constrains specific searches
   let query = cardName;
@@ -330,17 +330,17 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
   };
 
   try {
-    // Make two parallel calls — one for BIN, one for auctions — to get a balanced mix
-    const binLimit = Math.ceil(limit * 0.6);
-    const auctionLimit = Math.ceil(limit * 0.4);
+    // Fetch up to 200 per buying option (eBay API max) — 2 parallel calls, 400 candidates total.
+    // backgroundJobs.js scores all results and keeps only the top 50 by deal score.
+    const EBAY_MAX_PER_REQUEST = 200;
 
     const [binData, auctionData] = await Promise.all([
       withRetry(
-        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('FIXED_PRICE', binLimit).toString()}`),
+        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('FIXED_PRICE', EBAY_MAX_PER_REQUEST).toString()}`),
         2
       ).catch(err => { if (err.statusCode === 429) throw err; return null; }),
       withRetry(
-        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('AUCTION', auctionLimit).toString()}`),
+        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('AUCTION', EBAY_MAX_PER_REQUEST).toString()}`),
         2
       ).catch(err => { if (err.statusCode === 429) throw err; return null; })
     ]);
