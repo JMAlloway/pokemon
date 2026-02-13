@@ -138,6 +138,11 @@ export async function executeSearch(searchQuery) {
       ...pricePoints
     ];
 
+    // Store price data for comps display and future baseline calculations
+    if (pricePoints.length > 0) {
+      await storeSoldListings(pricePoints, searchQuery.cardName, searchQuery.set);
+    }
+
     // 3. Calculate recency-weighted baseline
     const baseline = calculateRecencyWeightedBaseline(allPriceData);
 

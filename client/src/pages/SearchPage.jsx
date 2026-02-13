@@ -4,7 +4,7 @@ import ListingCard from '../components/ListingCard';
 import useSearchStore from '../store/searchStore';
 
 export default function SearchPage() {
-  const { listings, isSearching, error, cached, cacheTimestamp, baseline, recencyScore, sampleSize, search, clearResults } = useSearchStore();
+  const { listings, recentSoldListings, isSearching, error, cached, cacheTimestamp, baseline, recencyScore, sampleSize, search, clearResults } = useSearchStore();
   const [sortBy, setSortBy] = useState('dealScore');
 
   const handleSearch = async (params) => {
@@ -112,7 +112,7 @@ export default function SearchPage() {
           {/* Listing grid */}
           <div className="space-y-2">
             {sortedListings.map(listing => (
-              <ListingCard key={listing.id} listing={listing} />
+              <ListingCard key={listing.id} listing={listing} recentSoldListings={recentSoldListings} />
             ))}
           </div>
         </div>

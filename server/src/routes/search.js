@@ -108,10 +108,18 @@ router.post('/', validateSearchQuery, async (req, res) => {
       ]
     });
 
+    // Get recent sold comps for the card
+    const recentSoldListings = await prisma.recentSoldListing.findMany({
+      where: { cardName: searchQuery.cardName },
+      orderBy: { soldAt: 'desc' },
+      take: 20
+    });
+
     console.log(`[Search] Returning ${listings.length} listings for "${req.body.cardName}" (${Date.now() - startTime}ms)`);
 
     res.json({
       listings,
+      recentSoldListings,
       baseline: result.baseline,
       recencyScore: result.recencyScore,
       sampleSize: result.sampleSize,

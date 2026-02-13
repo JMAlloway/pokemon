@@ -20,6 +20,7 @@ const useSearchStore = create((set, get) => ({
       const data = await api.post('/api/search', { cardName, set: cardSet, rarity, condition, graded, language });
       set({
         listings: data.listings || [],
+        recentSoldListings: data.recentSoldListings || [],
         baseline: data.baseline,
         recencyScore: data.recencyScore,
         sampleSize: data.sampleSize,
