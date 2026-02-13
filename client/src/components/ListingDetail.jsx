@@ -138,7 +138,9 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
             <h3 className="text-sm text-text-secondary">{listing.listingTitle}</h3>
             <div className="flex items-baseline gap-4">
               <div>
-                <span className="text-2xl font-bold text-text-primary">${Number(listing.currentPrice).toFixed(2)}</span>
+                <span className="text-2xl font-bold text-text-primary">
+                  ${Number(isAuction ? (listing.currentBidPrice || listing.currentPrice) : listing.currentPrice).toFixed(2)}
+                </span>
                 <span className="text-sm text-text-muted ml-1">{isAuction ? 'current bid' : 'current'}</span>
               </div>
               {listing.recentSoldPrice && !isAuction && (

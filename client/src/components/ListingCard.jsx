@@ -119,7 +119,7 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
                 </div>
               </div>
               <PriceDisplay
-                price={listing.currentPrice}
+                price={isAuction ? (listing.currentBidPrice || listing.currentPrice) : listing.currentPrice}
                 baseline={listing.recentSoldPrice}
                 gapPercent={listing.priceGapPercent}
               />

@@ -166,8 +166,11 @@ export async function executeSearch(searchQuery) {
     // 6. Calculate deal scores and store listings
     let storedCount = 0;
     for (const listing of analyzedListings) {
+      const effectivePrice = listing.buyingOption === 'AUCTION'
+        ? (listing.currentBidPrice || listing.currentPrice)
+        : listing.currentPrice;
       const priceGapPercent = baseline.weightedPrice
-        ? calculatePriceGap(baseline.weightedPrice, listing.currentPrice)
+        ? calculatePriceGap(baseline.weightedPrice, effectivePrice)
         : null;
 
       const dealScore = calculateDealScore({
@@ -188,7 +191,7 @@ export async function executeSearch(searchQuery) {
           searchQueryId: searchQuery.id,
           cardName: searchQuery.cardName,
           listingTitle: listing.listingTitle,
-          currentPrice: listing.currentPrice,
+          currentPrice: effectivePrice,
           recentSoldPrice: baseline.weightedPrice,
           priceGapPercent,
           hasTypo: listing.hasTypo,
@@ -210,7 +213,7 @@ export async function executeSearch(searchQuery) {
           listingStatus: listing.listingStatus || 'active'
         },
         update: {
-          currentPrice: listing.currentPrice,
+          currentPrice: effectivePrice,
           recentSoldPrice: baseline.weightedPrice,
           priceGapPercent,
           hasTypo: listing.hasTypo,
