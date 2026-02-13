@@ -279,7 +279,7 @@ const POKEMON_CARDS_CATEGORY = '183454';
  * Search eBay for active Pokemon card listings.
  * Uses Browse API /buy/browse/v1/item_summary/search
  */
-export async function searchListings({ cardName, set, rarity, condition, graded, language, limit = 50 }) {
+export async function searchListings({ cardName, set, rarity, condition, graded, language, limit = 200 }) {
   // Use the card name directly — category_ids scopes to Pokemon cards
   // so we don't need to prepend "Pokemon card" which over-constrains specific searches
   let query = cardName;

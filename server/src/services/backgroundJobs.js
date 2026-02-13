@@ -242,16 +242,16 @@ export async function executeSearch(searchQuery) {
       }
     }
 
-    // 6. Calculate deal scores and store listings
-    let storedCount = 0;
-    for (const listing of analyzedListings) {
+    // 6. Score all listings, then keep only the top 50 by deal score
+    const MAX_STORED_LISTINGS = 50;
+
+    const scoredListings = analyzedListings.map(listing => {
       const effectivePrice = listing.buyingOption === 'AUCTION'
         ? (listing.currentBidPrice || listing.currentPrice)
         : listing.currentPrice;
       const shippingKnown = listing.shippingCost != null;
       const shipping = shippingKnown ? Number(listing.shippingCost) : 0;
       const totalPrice = effectivePrice + shipping;
-      // Calculate price gap if we know or estimated shipping
       const priceGapPercent = baseline.weightedPrice && shippingKnown
         ? calculatePriceGap(baseline.weightedPrice, totalPrice)
         : null;
@@ -266,7 +266,20 @@ export async function executeSearch(searchQuery) {
         auctionEndDate: listing.auctionEndDate
       });
 
-      // Upsert listing
+      return { listing, effectivePrice, priceGapPercent, dealScore };
+    });
+
+    // Sort by deal score descending and take the top results
+    scoredListings.sort((a, b) => b.dealScore - a.dealScore);
+    const topListings = scoredListings.slice(0, MAX_STORED_LISTINGS);
+
+    if (scoredListings.length > MAX_STORED_LISTINGS) {
+      console.log(`[BackgroundJobs] Scored ${scoredListings.length} listings, keeping top ${MAX_STORED_LISTINGS} by deal score`);
+    }
+
+    // Store only the top listings
+    let storedCount = 0;
+    for (const { listing, effectivePrice, priceGapPercent, dealScore } of topListings) {
       await prisma.ebayListing.upsert({
         where: { ebayListingId: listing.ebayListingId },
         create: {
@@ -319,6 +332,22 @@ export async function executeSearch(searchQuery) {
       });
 
       storedCount++;
+    }
+
+    // Remove listings that fell out of the top results
+    const keptIds = new Set(topListings.map(t => t.listing.ebayListingId));
+    const existingForQuery = await prisma.ebayListing.findMany({
+      where: { searchQueryId: searchQuery.id },
+      select: { ebayListingId: true }
+    });
+    const toRemove = existingForQuery
+      .map(l => l.ebayListingId)
+      .filter(id => !keptIds.has(id));
+    if (toRemove.length > 0) {
+      await prisma.ebayListing.deleteMany({
+        where: { ebayListingId: { in: toRemove } }
+      });
+      console.log(`[BackgroundJobs] Pruned ${toRemove.length} lower-scored listings for "${searchQuery.cardName}"`);
     }
 
     // 7. Reconcile baseline: ensure ALL listings for this search query share the
