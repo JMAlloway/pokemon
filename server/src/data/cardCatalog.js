@@ -68,6 +68,9 @@ const CARD_CATALOG = [
       { name: 'Umbreon ex', number: '105', rarity: 'specialIllustrationRare' },
       { name: 'Sylveon ex', number: '106', rarity: 'specialIllustrationRare' },
       { name: 'Eevee ex', number: '107', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Pokémon Fan Club', number: '080', rarity: 'uncommon' },
+      { name: 'Pokémon Fan Club', number: '108', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -284,6 +287,16 @@ const CARD_CATALOG = [
       { name: 'Suicune ex', number: '162', rarity: 'specialIllustrationRare' },
       { name: 'Arceus ex', number: '163', rarity: 'specialIllustrationRare' },
       { name: 'Eevee ex', number: '164', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: "N's Resolve", number: '120', rarity: 'uncommon' },
+      { name: 'Lacey', number: '121', rarity: 'uncommon' },
+      { name: 'Cynthia', number: '119', rarity: 'uncommon' },
+      { name: "N's Resolve", number: '150', rarity: 'ultraRare' },
+      { name: 'Lacey', number: '151', rarity: 'ultraRare' },
+      { name: "N's Resolve", number: '165', rarity: 'illustrationRare' },
+      { name: 'Lacey', number: '166', rarity: 'illustrationRare' },
+      { name: "N's Resolve", number: '170', rarity: 'specialIllustrationRare' },
+      { name: 'Lacey', number: '171', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -319,6 +332,12 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Terapagos ex', number: '092', rarity: 'specialIllustrationRare' },
       { name: 'Lapras ex', number: '093', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Briar', number: '072', rarity: 'uncommon' },
+      { name: 'Briar', number: '088', rarity: 'ultraRare' },
+      { name: 'Briar', number: '094', rarity: 'specialIllustrationRare' },
+      { name: 'Crispin', number: '073', rarity: 'uncommon' },
+      { name: 'Crispin', number: '089', rarity: 'ultraRare' },
     ]
   },
 
@@ -352,6 +371,12 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Greninja ex', number: '058', rarity: 'specialIllustrationRare' },
       { name: 'Dragapult ex', number: '059', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Kieran', number: '044', rarity: 'uncommon' },
+      { name: "Janine's Secret Art", number: '045', rarity: 'uncommon' },
+      { name: 'Kieran', number: '053', rarity: 'ultraRare' },
+      { name: 'Kieran', number: '060', rarity: 'specialIllustrationRare' },
+      { name: "Janine's Secret Art", number: '054', rarity: 'ultraRare' },
     ]
   },
 
@@ -388,6 +413,16 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Ogerpon ex', number: '110', rarity: 'specialIllustrationRare' },
       { name: 'Bloodmoon Ursaluna ex', number: '111', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Perrin', number: '080', rarity: 'uncommon' },
+      { name: 'Carmine', number: '081', rarity: 'uncommon' },
+      { name: "Lana's Aid", number: '082', rarity: 'uncommon' },
+      { name: 'Perrin', number: '105', rarity: 'ultraRare' },
+      { name: 'Carmine', number: '106', rarity: 'ultraRare' },
+      { name: "Lana's Aid", number: '107', rarity: 'ultraRare' },
+      { name: 'Perrin', number: '112', rarity: 'specialIllustrationRare' },
+      { name: 'Carmine', number: '113', rarity: 'specialIllustrationRare' },
+      { name: "Lana's Aid", number: '114', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -424,6 +459,12 @@ const CARD_CATALOG = [
       { name: 'Walking Wake ex', number: '100', rarity: 'specialIllustrationRare' },
       { name: 'Raging Bolt ex', number: '101', rarity: 'specialIllustrationRare' },
       { name: 'Bianca\'s Devotion', number: '102', rarity: 'specialIllustrationRare' },
+      // More Trainers
+      { name: 'Explorer\'s Guidance', number: '075', rarity: 'uncommon' },
+      { name: 'Salvatore', number: '076', rarity: 'uncommon' },
+      { name: 'Explorer\'s Guidance', number: '085', rarity: 'ultraRare' },
+      { name: 'Salvatore', number: '086', rarity: 'ultraRare' },
+      { name: 'Explorer\'s Guidance', number: '103', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -459,6 +500,13 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Charizard ex', number: '140', rarity: 'specialIllustrationRare' },
       { name: 'Mimikyu ex', number: '141', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Iono', number: '080', rarity: 'ultraRare' },
+      { name: "Professor's Research", number: '081', rarity: 'ultraRare' },
+      { name: 'Iono', number: '135', rarity: 'illustrationRare' },
+      { name: "Professor's Research", number: '136', rarity: 'illustrationRare' },
+      { name: 'Iono', number: '142', rarity: 'specialIllustrationRare' },
+      { name: 'Penny', number: '143', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -493,6 +541,14 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Roaring Moon ex', number: '130', rarity: 'specialIllustrationRare' },
       { name: 'Iron Valiant ex', number: '131', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Professor Sada\'s Vitality', number: '115', rarity: 'uncommon' },
+      { name: 'Professor Turo\'s Scenario', number: '116', rarity: 'uncommon' },
+      { name: 'Counter Catcher', number: '114', rarity: 'uncommon' },
+      { name: 'Professor Sada\'s Vitality', number: '125', rarity: 'ultraRare' },
+      { name: 'Professor Turo\'s Scenario', number: '126', rarity: 'ultraRare' },
+      { name: 'Professor Sada\'s Vitality', number: '132', rarity: 'specialIllustrationRare' },
+      { name: 'Professor Turo\'s Scenario', number: '133', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -560,6 +616,13 @@ const CARD_CATALOG = [
       { name: 'Mewtwo ex', number: '201', rarity: 'specialIllustrationRare' },
       { name: 'Erikas Invitation', number: '202', rarity: 'specialIllustrationRare' },
       { name: 'Alakazam ex', number: '203', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Bill\'s Transfer', number: '155', rarity: 'uncommon' },
+      { name: 'Giovanni\'s Charisma', number: '156', rarity: 'uncommon' },
+      { name: 'Erikas Invitation', number: '160', rarity: 'uncommon' },
+      { name: 'Bill\'s Transfer', number: '178', rarity: 'ultraRare' },
+      { name: 'Giovanni\'s Charisma', number: '179', rarity: 'ultraRare' },
+      { name: 'Giovanni\'s Charisma', number: '204', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -595,6 +658,12 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Charizard ex', number: '170', rarity: 'specialIllustrationRare' },
       { name: 'Tyranitar ex', number: '171', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Boss\'s Orders', number: '132', rarity: 'uncommon' },
+      { name: 'Iono', number: '133', rarity: 'uncommon' },
+      { name: 'Boss\'s Orders', number: '153', rarity: 'ultraRare' },
+      { name: 'Iono', number: '154', rarity: 'ultraRare' },
+      { name: 'Boss\'s Orders', number: '172', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -628,6 +697,13 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Chien-Pao ex', number: '190', rarity: 'specialIllustrationRare' },
       { name: 'Ting-Lu ex', number: '191', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Iono', number: '108', rarity: 'uncommon' },
+      { name: 'Boss\'s Orders', number: '109', rarity: 'uncommon' },
+      { name: 'Iono', number: '180', rarity: 'ultraRare' },
+      { name: 'Boss\'s Orders', number: '181', rarity: 'ultraRare' },
+      { name: 'Iono', number: '192', rarity: 'specialIllustrationRare' },
+      { name: 'Boss\'s Orders', number: '193', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -663,6 +739,20 @@ const CARD_CATALOG = [
       // Special Illustration Rare
       { name: 'Koraidon ex', number: '190', rarity: 'specialIllustrationRare' },
       { name: 'Miraidon ex', number: '191', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: "Professor's Research", number: '087', rarity: 'uncommon' },
+      { name: 'Nemona', number: '088', rarity: 'uncommon' },
+      { name: 'Penny', number: '089', rarity: 'uncommon' },
+      { name: 'Arven', number: '090', rarity: 'uncommon' },
+      { name: 'Jacq', number: '091', rarity: 'uncommon' },
+      { name: "Professor's Research", number: '176', rarity: 'ultraRare' },
+      { name: 'Nemona', number: '177', rarity: 'ultraRare' },
+      { name: 'Penny', number: '178', rarity: 'ultraRare' },
+      { name: 'Arven', number: '179', rarity: 'ultraRare' },
+      { name: "Professor's Research", number: '193', rarity: 'specialIllustrationRare' },
+      { name: 'Nemona', number: '194', rarity: 'specialIllustrationRare' },
+      { name: 'Penny', number: '195', rarity: 'specialIllustrationRare' },
+      { name: 'Arven', number: '196', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -739,6 +829,12 @@ const CARD_CATALOG = [
       { name: 'Espeon VMAX', number: '210', rarity: 'specialIllustrationRare' },
       { name: 'Leafeon V', number: '167', rarity: 'illustrationRare' },
       { name: 'Leafeon VMAX', number: '205', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Raihan', number: '152', rarity: 'ultraRare' },
+      { name: 'Raihan', number: '202', rarity: 'illustrationRare' },
+      { name: 'Raihan', number: '224', rarity: 'specialIllustrationRare' },
+      { name: 'Aroma Lady', number: '141', rarity: 'uncommon' },
+      { name: 'Gordie', number: '149', rarity: 'ultraRare' },
     ]
   },
 
@@ -768,6 +864,13 @@ const CARD_CATALOG = [
       { name: 'Charizard VSTAR', number: '174', rarity: 'specialIllustrationRare' },
       { name: 'Arceus V', number: '166', rarity: 'illustrationRare' },
       { name: 'Arceus VSTAR', number: '176', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Marnie', number: '145', rarity: 'ultraRare' },
+      { name: 'Boss\'s Orders', number: '132', rarity: 'uncommon' },
+      { name: 'Professor\'s Research', number: '147', rarity: 'ultraRare' },
+      { name: 'Marnie', number: '171', rarity: 'specialIllustrationRare' },
+      { name: 'Cynthia\'s Ambition', number: '138', rarity: 'ultraRare' },
+      { name: 'Cynthia\'s Ambition', number: '169', rarity: 'specialIllustrationRare' },
     ]
   },
 
@@ -954,6 +1057,10 @@ const CARD_CATALOG = [
       { name: 'Gengar VMAX', number: '271', rarity: 'specialIllustrationRare' },
       { name: 'Espeon V', number: '245', rarity: 'illustrationRare' },
       { name: 'Espeon VMAX', number: '270', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Elesa\'s Sparkle', number: '233', rarity: 'ultraRare' },
+      { name: 'Elesa\'s Sparkle', number: '260', rarity: 'illustrationRare' },
+      { name: 'Sidney', number: '236', rarity: 'ultraRare' },
     ]
   },
 
@@ -972,6 +1079,12 @@ const CARD_CATALOG = [
       { name: 'Shadow Rider Calyrex VMAX', number: '205', rarity: 'specialIllustrationRare' },
       { name: 'Blaziken V', number: '161', rarity: 'illustrationRare' },
       { name: 'Blaziken VMAX', number: '200', rarity: 'specialIllustrationRare' },
+      // Trainers
+      { name: 'Melony', number: '146', rarity: 'ultraRare' },
+      { name: 'Melony', number: '195', rarity: 'illustrationRare' },
+      { name: 'Melony', number: '218', rarity: 'specialIllustrationRare' },
+      { name: 'Peony', number: '150', rarity: 'ultraRare' },
+      { name: 'Peony', number: '197', rarity: 'illustrationRare' },
     ]
   },
 
