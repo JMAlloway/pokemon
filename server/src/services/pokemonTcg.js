@@ -62,6 +62,16 @@ export async function validateCardName(cardName) {
     return { valid: true, name: exactMatch, suggestions: [] };
   }
 
+  // Check if input contains a known Pokemon name (handles variants like "Mega Charizard X ex 013/094")
+  const containsMatch = KNOWN_POKEMON_NAMES.find(name => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(cardName);
+  });
+
+  if (containsMatch) {
+    return { valid: true, name: cardName.trim(), suggestions: [] };
+  }
+
   // Check cache
   const cacheKey = `validate_${normalized}`;
   const cached = pokemonTcgCache.get(cacheKey);
