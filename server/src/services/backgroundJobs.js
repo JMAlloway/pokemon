@@ -52,6 +52,78 @@ function filterByCardNumber(listings, searchCardName) {
 }
 
 /**
+ * Filter out non-card products that sellers list in the Pokemon cards category.
+ * Art cases, keychains, custom/proxy cards, stickers, etc. match card name searches
+ * but aren't the actual card — and their low price inflates deal scores.
+ */
+const NON_CARD_PATTERNS = [
+  // Cases & display
+  /\bart\s*case\b/i,
+  /\bartwork\s*case\b/i,
+  /\bdisplay\s*case\b/i,
+  /\bone[\s-]*touch\b/i,
+  /\btop\s*loader\b/i,
+  /\bcard\s*stand\b/i,
+  /\bframe[d]?\b/i,
+  // Accessories
+  /\bkeychain\b/i,
+  /\bkey\s*chain\b/i,
+  /\bkey\s*ring\b/i,
+  /\bpin\b(?!\s*collection)/i, // "pin" but not "pin collection" (which can be a card set)
+  /\bmagnet\b/i,
+  /\bsticker\b/i,
+  /\bpatch\b/i,
+  /\bbadge\b/i,
+  // Custom / fan-made / proxy
+  /\bcustom\b/i,
+  /\bproxy\b/i,
+  /\bfan\s*art\b/i,
+  /\bhand\s*draw/i,
+  /\bhand\s*made/i,
+  /\bhandmade\b/i,
+  /\bdiy\b/i,
+  /\borica\b/i,
+  /\bfan\s*made\b/i,
+  /\bplaytest\b/i,
+  // Other non-card products
+  /\bplush\b/i,
+  /\bfigur(?:e|ine)\b/i,
+  /\bsleeve[s]?\b/i,
+  /\bdeck\s*box\b/i,
+  /\bbinder\b/i,
+  /\bplaymat\b/i,
+  /\bplay\s*mat\b/i,
+  /\bcoin\b/i,
+  /\bdice\b/i,
+  /\bnotebook\b/i,
+  /\bposter\b/i,
+  /\bt[\s-]*shirt\b/i,
+  /\brug\b/i,
+  /\bphone\s*case\b/i,
+  /\bwallet\b/i,
+  // Repack / mystery / lot (not a specific card)
+  /\brepack\b/i,
+  /\bmystery\s*pack\b/i,
+  /\bmystery\s*box\b/i,
+  /\bsealed\s*pack\b/i,
+];
+
+function filterNonCardListings(listings) {
+  const before = listings.length;
+  const filtered = listings.filter(listing => {
+    const title = listing.listingTitle || listing.title || '';
+    return !NON_CARD_PATTERNS.some(pattern => pattern.test(title));
+  });
+
+  const removed = before - filtered.length;
+  if (removed > 0) {
+    console.log(`[BackgroundJobs] Non-card filter: removed ${removed}/${before} non-card items (cases, keychains, customs, etc.)`);
+  }
+
+  return filtered;
+}
+
+/**
  * Initialize all scheduled background jobs.
  */
 export function initializeBackgroundJobs() {
@@ -162,7 +234,10 @@ export async function executeSearch(searchQuery) {
 
     // 1c. Filter by card number: if the user searched for a specific card number
     //     (e.g. "130/094"), drop listings that have a *different* card number in the title
-    const relevantListings = filterByCardNumber(listingsWithShipping, searchQuery.cardName);
+    const cardNumberFiltered = filterByCardNumber(listingsWithShipping, searchQuery.cardName);
+
+    // 1d. Filter out non-card products (art cases, keychains, customs, etc.)
+    const relevantListings = filterNonCardListings(cardNumberFiltered);
 
     // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
     let soldData = [];
