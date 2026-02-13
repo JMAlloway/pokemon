@@ -1,5 +1,11 @@
-import { KNOWN_POKEMON_NAMES } from './typoDetection.js';
+import { KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS } from './typoDetection.js';
 import { similarityScore } from '../utils/levenshtein.js';
+
+// Combined list of all known card names (Pokemon + Trainers)
+const ALL_KNOWN_CARDS = [...KNOWN_POKEMON_NAMES, ...KNOWN_TRAINER_CARDS];
+
+// Pattern: card number like "118/094" or "013/094"
+const CARD_NUMBER_PATTERN = /\b\d{1,3}\s*\/\s*\d{2,3}\b/;
 
 /**
  * Pokemon TCG Database Service
@@ -54,8 +60,8 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 export async function validateCardName(cardName) {
   const normalized = cardName.trim().toLowerCase();
 
-  // Check against known Pokemon names
-  const exactMatch = KNOWN_POKEMON_NAMES.find(
+  // Check against all known card names (Pokemon + Trainers)
+  const exactMatch = ALL_KNOWN_CARDS.find(
     name => name.toLowerCase() === normalized
   );
 
@@ -63,13 +69,19 @@ export async function validateCardName(cardName) {
     return { valid: true, name: exactMatch, suggestions: [] };
   }
 
-  // Check if input contains a known Pokemon name (handles variants like "Mega Charizard X ex 013/094")
-  const containsMatch = KNOWN_POKEMON_NAMES.find(name => {
+  // Check if input contains a known card name (handles "Mega Charizard X ex 013/094", "Dawn 118/094")
+  const containsMatch = ALL_KNOWN_CARDS.find(name => {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(`\\b${escaped}\\b`, 'i').test(cardName);
   });
 
   if (containsMatch) {
+    return { valid: true, name: cardName.trim(), suggestions: [] };
+  }
+
+  // If input contains a card number pattern (e.g. "118/094"), accept it —
+  // the user knows the specific card they're looking for
+  if (CARD_NUMBER_PATTERN.test(cardName)) {
     return { valid: true, name: cardName.trim(), suggestions: [] };
   }
 
@@ -81,7 +93,7 @@ export async function validateCardName(cardName) {
   }
 
   // Try fuzzy matching against known names
-  const suggestions = KNOWN_POKEMON_NAMES
+  const suggestions = ALL_KNOWN_CARDS
     .map(name => ({ name, score: similarityScore(cardName, name) }))
     .filter(m => m.score >= 60)
     .sort((a, b) => b.score - a.score)
@@ -142,18 +154,18 @@ export function getAutocompleteSuggestions(partial, limit = 10) {
   if (normalizedPartial.length < 2) return [];
 
   // Prefix matches first
-  const prefixMatches = KNOWN_POKEMON_NAMES
+  const prefixMatches = ALL_KNOWN_CARDS
     .filter(name => name.toLowerCase().startsWith(normalizedPartial));
 
   // Contains matches second
-  const containsMatches = KNOWN_POKEMON_NAMES
+  const containsMatches = ALL_KNOWN_CARDS
     .filter(name =>
       name.toLowerCase().includes(normalizedPartial) &&
       !name.toLowerCase().startsWith(normalizedPartial)
     );
 
   // Fuzzy matches last
-  const fuzzyMatches = KNOWN_POKEMON_NAMES
+  const fuzzyMatches = ALL_KNOWN_CARDS
     .filter(name => {
       const score = similarityScore(partial, name);
       return score >= 50 &&
@@ -174,4 +186,4 @@ export function getSetSuggestions(partial) {
   return POKEMON_SETS.filter(s => s.toLowerCase().includes(normalized)).slice(0, 10);
 }
 
-export { POKEMON_SETS, CARD_TYPES, KNOWN_POKEMON_NAMES };
+export { POKEMON_SETS, CARD_TYPES, KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS, ALL_KNOWN_CARDS };

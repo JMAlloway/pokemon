@@ -52,6 +52,26 @@ const KNOWN_POKEMON_NAMES = [
   'Starly', 'Lopunny'
 ];
 
+// Trainer, Supporter, Item, Stadium, and Tool cards
+const KNOWN_TRAINER_CARDS = [
+  // Phantasmal Flames (ME02) trainers
+  'Battle Cage', 'Blowtorch', 'Dawn', 'Dizzying Valley',
+  'Firebreather', "Grimsley's Move", 'Jumbo Ice Cream',
+  'Punk Helmet', 'Sacred Charm', 'Wondrous Patch',
+  // Common/popular trainers across sets
+  'Professor Oak', "Professor's Research", 'Boss\'s Orders', 'N',
+  'Cynthia', 'Marnie', 'Judge', 'Iono', 'Arven', 'Penny',
+  'Irida', 'Melony', 'Raihan', 'Leon', 'Nessa',
+  'Ultra Ball', 'Nest Ball', 'Quick Ball', 'Master Ball', 'Level Ball',
+  'Rare Candy', 'Switch', 'Energy Retrieval', 'Potion', 'Super Rod',
+  'VS Seeker', 'Battle VIP Pass', 'Night Stretcher', 'Buddy-Buddy Poffin',
+  'Earthen Vessel', 'Counter Catcher', 'Prime Catcher', 'Pal Pad',
+  'Forest Seal Stone', 'Temple of Sinnoh', 'Path to the Peak',
+  'Collapsed Stadium', 'Artazon', 'Mesagoza', 'Technical Machine',
+  'Pokegear', 'Acro Bike', 'Trainers\' Mail', 'Computer Search',
+  'Ace Spec', 'Max Elixir', 'Crushing Hammer', 'Enhanced Hammer'
+];
+
 /**
  * Analyze a listing title for potential misspellings of Pokemon names.
  * Uses Levenshtein distance to detect typos.
@@ -181,4 +201,4 @@ export function suggestCardNames(input, limit = 5) {
   return matches;
 }
 
-export { KNOWN_POKEMON_NAMES };
+export { KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS };
