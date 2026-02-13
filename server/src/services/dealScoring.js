@@ -151,57 +151,76 @@ export function calculateDealScore({ hasTypo, priceGapPercent, recencyScore = 50
 /**
  * Calculate deal score for auction listings (0-100).
  *
+ * Key insight: auction prices are only meaningful close to end time.
+ * A $0.99 bid with 5 days left will almost certainly get bid up — snipers
+ * wait until the final minutes. So we apply a time-decay multiplier that
+ * heavily dampens the price gap and bid signals for far-out auctions.
+ *
  * Signals:
- * 1. Time remaining: auctions ending in <6h with few bids = opportunity (up to 25 pts)
- * 2. Bid competition: fewer bids = less competition = better chance (up to 25 pts)
+ * 1. Time remaining: auctions ending soon with few bids = opportunity (up to 25 pts)
+ * 2. Bid competition: fewer bids = less competition (up to 25 pts)
  * 3. Price gap: current bid vs market price (up to 30 pts)
  * 4. Typo bonus: typos reduce visibility = less competition (up to 20 pts)
+ *
+ * Time-decay multiplier (applied to price gap + bid signals):
+ *   < 1h remaining:  1.0  (price is real)
+ *   1-6h:            0.75
+ *   6-24h:           0.45
+ *   1-3 days:        0.15
+ *   3+ days:         0.05 (price is nearly meaningless)
  */
 function calculateAuctionDealScore({ hasTypo, priceGapPercent, recencyScore = 50, typoConfidenceScore = null, bidCount = 0, auctionEndDate = null }) {
-  let score = 0;
   const bids = bidCount || 0;
 
-  // 1. Time remaining signal (0-25 points)
-  // Auctions ending soon with low competition are the best opportunities
+  // Time-decay multiplier: how much to trust the current price
+  let timeMultiplier = 0.05; // default: far out or unknown
+  let timeScore = 3;         // base time signal for far-out auctions
+
   if (auctionEndDate) {
     const hoursRemaining = Math.max(0, (new Date(auctionEndDate) - new Date()) / (1000 * 60 * 60));
 
     if (hoursRemaining <= 1) {
-      // Ending very soon — high urgency, high opportunity if low bids
-      score += bids <= 2 ? 25 : bids <= 5 ? 15 : 5;
+      timeMultiplier = 1.0;
+      timeScore = bids <= 2 ? 25 : bids <= 5 ? 15 : 5;
     } else if (hoursRemaining <= 6) {
-      score += bids <= 3 ? 20 : bids <= 8 ? 10 : 3;
+      timeMultiplier = 0.75;
+      timeScore = bids <= 3 ? 20 : bids <= 8 ? 10 : 3;
     } else if (hoursRemaining <= 24) {
-      score += bids <= 2 ? 12 : 5;
+      timeMultiplier = 0.45;
+      timeScore = bids <= 2 ? 12 : 5;
+    } else if (hoursRemaining <= 72) {
+      timeMultiplier = 0.15;
+      timeScore = 3;
     } else {
-      // Far out — less actionable
-      score += 3;
+      timeMultiplier = 0.05;
+      timeScore = 1;
     }
   }
 
-  // 2. Bid competition signal (0-25 points)
-  // Fewer bids = less competition = better deal potential
-  if (bids === 0) {
-    score += 25;
-  } else if (bids <= 2) {
-    score += 18;
-  } else if (bids <= 5) {
-    score += 10;
-  } else if (bids <= 10) {
-    score += 4;
-  }
-  // 10+ bids = very competitive, no bonus
+  let score = timeScore;
 
-  // 3. Price gap signal (0-30 points)
-  // Current bid vs market — bigger gap = more room for a deal
+  // 2. Bid competition signal (0-25 points, dampened by time)
+  let bidScore = 0;
+  if (bids === 0) {
+    bidScore = 25;
+  } else if (bids <= 2) {
+    bidScore = 18;
+  } else if (bids <= 5) {
+    bidScore = 10;
+  } else if (bids <= 10) {
+    bidScore = 4;
+  }
+  score += Math.round(bidScore * timeMultiplier);
+
+  // 3. Price gap signal (0-30 points, dampened by time)
   if (priceGapPercent !== null && priceGapPercent > 0) {
     const gapScore = Math.min(30, Math.round(priceGapPercent * 0.6));
     const confidenceMultiplier = Math.max(0.3, recencyScore / 100);
-    score += Math.round(gapScore * confidenceMultiplier);
+    score += Math.round(gapScore * confidenceMultiplier * timeMultiplier);
   }
 
-  // 4. Typo bonus (0-20 points)
-  // Typos reduce auction visibility = less competition
+  // 4. Typo bonus (0-20 points) — NOT dampened by time
+  // Typo value persists regardless of time: fewer eyeballs = less competition at close
   if (hasTypo) {
     const confidence = typoConfidenceScore || 70;
     score += Math.round(10 + (confidence / 100) * 10);
