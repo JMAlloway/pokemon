@@ -473,9 +473,14 @@ export async function searchSoldListings({ cardName, set, graded, language, days
 }
 
 /**
- * Batch-fetch shipping costs for items missing shipping data from search results.
- * Uses the getItems endpoint which reliably returns shippingOptions.
- * Fetches up to 20 items per API call.
+ * Fetch shipping costs for items missing shipping data from search results.
+ *
+ * The search endpoint only returns shippingOptions for free-shipping items.
+ * The batch getItems endpoint returns a limited field set that often excludes
+ * shippingOptions. The individual getItem endpoint reliably returns full item
+ * details including shippingOptions.
+ *
+ * Strategy: parallel individual getItem calls with concurrency control.
  *
  * @param {Array} listings - Array of listing objects from searchListings
  * @returns {Array} Same array with shippingCost filled in where possible
@@ -484,63 +489,41 @@ export async function fillMissingShipping(listings) {
   const needsShipping = listings.filter(l => l.shippingCost === null && !l.ebayListingId.startsWith('ebay_'));
   if (needsShipping.length === 0) return listings;
 
-  console.log(`[eBay API] ${needsShipping.length} listings need shipping data, fetching via getItems...`);
+  console.log(`[eBay API] ${needsShipping.length}/${listings.length} listings need shipping data, fetching via getItem...`);
 
   const shippingMap = new Map();
+  const CONCURRENCY = 5;
 
-  // Batch in groups of 20 (eBay getItems limit).
-  // Item IDs use pipes internally (v1|123|0) — separate multiple IDs with COMMAS.
-  for (let i = 0; i < needsShipping.length; i += 20) {
-    const batch = needsShipping.slice(i, i + 20);
-    const itemIds = batch.map(l => l.ebayListingId).join(',');
+  // Process items in concurrent batches of CONCURRENCY
+  for (let i = 0; i < needsShipping.length; i += CONCURRENCY) {
+    const batch = needsShipping.slice(i, i + CONCURRENCY);
 
-    try {
-      const data = await withRetry(
-        () => ebayFetch(`/buy/browse/v1/item?item_ids=${encodeURIComponent(itemIds)}`),
-        2
-      );
-
-      if (data?.items) {
-        for (const item of data.items) {
-          const shippingOption = item.shippingOptions?.[0];
-          const cost = shippingOption?.shippingCost?.value !== undefined
-            ? parseFloat(shippingOption.shippingCost.value)
-            : null;
-          if (cost !== null) {
-            shippingMap.set(item.itemId, cost);
-          }
-        }
-      }
-    } catch (err) {
-      if (err.statusCode === 429) throw err;
-      console.warn(`[eBay API] Batch shipping fetch failed:`, err.message);
-    }
-  }
-
-  // Fallback: for any items still missing after batch, try individual getItem calls
-  // (getItem returns the full item detail including shippingOptions reliably)
-  const stillMissing = needsShipping.filter(l => !shippingMap.has(l.ebayListingId));
-  if (stillMissing.length > 0 && stillMissing.length <= 10) {
-    console.log(`[eBay API] ${stillMissing.length} items still missing shipping, trying individual getItem...`);
-    for (const listing of stillMissing) {
-      try {
-        const data = await withRetry(
+    const results = await Promise.allSettled(
+      batch.map(listing =>
+        withRetry(
           () => ebayFetch(`/buy/browse/v1/item/${encodeURIComponent(listing.ebayListingId)}`),
           1
-        );
-        if (data) {
-          const shippingOption = data.shippingOptions?.[0];
-          const cost = shippingOption?.shippingCost?.value !== undefined
-            ? parseFloat(shippingOption.shippingCost.value)
-            : null;
-          if (cost !== null) {
-            shippingMap.set(listing.ebayListingId, cost);
+        ).then(data => {
+          if (data) {
+            const shippingOption = data.shippingOptions?.[0];
+            const cost = shippingOption?.shippingCost?.value !== undefined
+              ? parseFloat(shippingOption.shippingCost.value)
+              : null;
+            if (cost !== null) {
+              shippingMap.set(data.itemId, cost);
+            }
           }
-        }
-      } catch (err) {
-        if (err.statusCode === 429) throw err;
-        // Individual item fetch failed — skip
-      }
+        })
+      )
+    );
+
+    // If we hit a rate limit, stop fetching more
+    const rateLimited = results.some(r =>
+      r.status === 'rejected' && r.reason?.statusCode === 429
+    );
+    if (rateLimited) {
+      console.warn(`[eBay API] Rate limited during shipping fetch, stopping after ${i + CONCURRENCY} items`);
+      break;
     }
   }
 

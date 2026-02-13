@@ -61,9 +61,10 @@ router.post('/', validateSearchQuery, async (req, res) => {
     // Attach runtime filters (not persisted to SearchQuery model)
     const searchWithFilters = { ...searchQuery, graded, language };
 
-    // Execute search with a 30-second timeout to prevent hanging
+    // Execute search with a 45-second timeout to prevent hanging
+    // (extra time for individual getItem shipping lookups)
     const searchTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Search timed out after 30 seconds')), 30000)
+      setTimeout(() => reject(new Error('Search timed out after 45 seconds')), 45000)
     );
     const result = await Promise.race([
       executeSearch(searchWithFilters),
