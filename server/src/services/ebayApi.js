@@ -284,14 +284,8 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
   let query = cardName;
   if (set) query += ` ${set}`;
 
-  const params = new URLSearchParams({
-    q: query,
-    category_ids: POKEMON_CARDS_CATEGORY,
-    limit: String(Math.min(limit, 200))
-  });
-
-  // Build filter conditions
-  const filters = ['buyingOptions:{FIXED_PRICE|AUCTION}'];
+  // Build shared filter conditions (excluding buyingOptions)
+  const baseFilters = [];
   if (condition) {
     const conditionMap = {
       mint: '1000',
@@ -302,14 +296,12 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
       poor: '6000'
     };
     if (conditionMap[condition]) {
-      filters.push(`conditionIds:{${conditionMap[condition]}}`);
+      baseFilters.push(`conditionIds:{${conditionMap[condition]}}`);
     }
-  }
-  if (filters.length > 0) {
-    params.append('filter', filters.join(','));
   }
 
   // Build aspect_filter for graded status and language
+  let aspectFilter = null;
   const aspects = [];
   if (graded) {
     aspects.push(`Graded:{${graded === 'yes' ? 'Yes' : 'No'}}`);
@@ -318,36 +310,58 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
     aspects.push(`Language:{${language}}`);
   }
   if (aspects.length > 0) {
-    params.append('aspect_filter', `categoryId:${POKEMON_CARDS_CATEGORY},${aspects.join(',')}`);
+    aspectFilter = `categoryId:${POKEMON_CARDS_CATEGORY},${aspects.join(',')}`;
   }
 
-  try {
-    const data = await withRetry(
-      () => ebayFetch(`/buy/browse/v1/item_summary/search?${params.toString()}`),
-      2 // Only 2 attempts for interactive searches to avoid long hangs
-    );
-
-    if (!data) {
-      return generateSampleListings(cardName, set, rarity, condition);
+  // Build params for a specific buying option
+  const buildParams = (buyingOption, searchLimit) => {
+    const params = new URLSearchParams({
+      q: query,
+      category_ids: POKEMON_CARDS_CATEGORY,
+      limit: String(searchLimit)
+    });
+    const filters = [`buyingOptions:{${buyingOption}}`, ...baseFilters];
+    params.append('filter', filters.join(','));
+    if (aspectFilter) {
+      params.append('aspect_filter', aspectFilter);
     }
+    return params;
+  };
 
-    if (!data.itemSummaries || data.itemSummaries.length === 0) {
-      // eBay API returned no results — supplement with sample data
-      // so the app demonstrates deal scoring even with limited sandbox data
+  try {
+    // Make two parallel calls — one for BIN, one for auctions — to get a balanced mix
+    const binLimit = Math.ceil(limit * 0.6);
+    const auctionLimit = Math.ceil(limit * 0.4);
+
+    const [binData, auctionData] = await Promise.all([
+      withRetry(
+        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('FIXED_PRICE', binLimit).toString()}`),
+        2
+      ).catch(err => { if (err.statusCode === 429) throw err; return null; }),
+      withRetry(
+        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('AUCTION', auctionLimit).toString()}`),
+        2
+      ).catch(err => { if (err.statusCode === 429) throw err; return null; })
+    ]);
+
+    const binItems = binData?.itemSummaries || [];
+    const auctionItems = auctionData?.itemSummaries || [];
+
+    if (binItems.length === 0 && auctionItems.length === 0) {
       console.log(`[eBay API] No listings found for "${cardName}", supplementing with sample data`);
       return generateSampleListings(cardName, set, rarity, condition);
     }
 
-    const listings = data.itemSummaries.map(item => {
-      // Determine buying option: eBay returns buyingOptions as array like ["FIXED_PRICE"] or ["AUCTION"]
+    const mapItem = (item) => {
       const buyingOptions = item.buyingOptions || [];
       const isAuction = buyingOptions.includes('AUCTION');
       const buyingOption = isAuction ? 'AUCTION' : 'FIXED_PRICE';
+      const bidPrice = isAuction ? parseFloat(item.currentBidPrice?.value || item.price?.value || 0) : null;
 
       return {
         ebayListingId: item.itemId,
         listingTitle: item.title,
-        currentPrice: parseFloat(item.price?.value || 0),
+        currentPrice: isAuction ? (bidPrice || parseFloat(item.price?.value || 0)) : parseFloat(item.price?.value || 0),
         currency: item.price?.currency || 'USD',
         sellerName: item.seller?.username || null,
         sellerRating: item.seller?.feedbackScore ? Math.min(5, item.seller.feedbackScore / 1000) : null,
@@ -361,17 +375,20 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
         listingStatus: 'active',
         buyingOption,
         bidCount: isAuction ? (item.bidCount || 0) : null,
-        currentBidPrice: isAuction ? parseFloat(item.currentBidPrice?.value || item.price?.value || 0) : null,
+        currentBidPrice: bidPrice,
         auctionEndDate: item.itemEndDate ? new Date(item.itemEndDate) : null
       };
-    });
+    };
 
-    console.log(`[eBay API] Found ${listings.length} listings for "${cardName}"`);
+    const listings = [...binItems.map(mapItem), ...auctionItems.map(mapItem)];
+
+    const binCount = listings.filter(l => l.buyingOption === 'FIXED_PRICE').length;
+    const auctionCount = listings.filter(l => l.buyingOption === 'AUCTION').length;
+    console.log(`[eBay API] Found ${listings.length} listings for "${cardName}" (${binCount} BIN, ${auctionCount} Auction)`);
     return listings;
   } catch (error) {
     console.error(`[eBay API] Search failed for "${cardName}":`, error.message);
     if (error.statusCode === 429) throw error;
-    // On API error, fall back to sample data so the app still works
     console.log('[eBay API] Falling back to sample data');
     return generateSampleListings(cardName, set, rarity, condition);
   }
