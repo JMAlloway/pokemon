@@ -248,7 +248,21 @@ export async function executeSearch(searchQuery) {
       storedCount++;
     }
 
-    // 7. Update search query timestamp
+    // 7. Reconcile baseline: ensure ALL listings for this search query share the
+    //    same recentSoldPrice. Other search queries may have overwritten some
+    //    listings' baselines via the upsert update path (the update doesn't change
+    //    searchQueryId, so cross-search contamination can occur).
+    if (baseline.weightedPrice != null) {
+      await prisma.ebayListing.updateMany({
+        where: { searchQueryId: searchQuery.id },
+        data: {
+          recentSoldPrice: baseline.weightedPrice,
+          recencyScore: baseline.recencyScore
+        }
+      });
+    }
+
+    // 8. Update search query timestamp
     await prisma.searchQuery.update({
       where: { id: searchQuery.id },
       data: { lastExecutedAt: new Date() }
