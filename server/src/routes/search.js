@@ -6,6 +6,7 @@ import { executeSearch } from '../services/backgroundJobs.js';
 import { validateCardName, getAutocompleteSuggestions, getSetSuggestions } from '../services/pokemonTcg.js';
 import { getRateLimitStatus } from '../services/ebayApi.js';
 import { flagPriceOutliers } from '../services/dealScoring.js';
+import CARD_CATALOG, { RARITY_LABELS, RARITY_ORDER } from '../data/cardCatalog.js';
 
 const router = Router();
 
@@ -177,6 +178,11 @@ router.get('/validate', async (req, res) => {
   }
   const result = await validateCardName(cardName);
   res.json(result);
+});
+
+// GET /api/search/catalog — Return set/card catalog for the picker UI
+router.get('/catalog', (req, res) => {
+  res.json({ sets: CARD_CATALOG, rarityLabels: RARITY_LABELS, rarityOrder: RARITY_ORDER });
 });
 
 // GET /api/search/rate-limit

@@ -1,8 +1,11 @@
 import { KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS } from './typoDetection.js';
 import { similarityScore } from '../utils/levenshtein.js';
+import { CATALOG_CARD_NAMES, CATALOG_SET_NAMES } from '../data/cardCatalog.js';
 
-// Combined list of all known card names (Pokemon + Trainers)
-const ALL_KNOWN_CARDS = [...KNOWN_POKEMON_NAMES, ...KNOWN_TRAINER_CARDS];
+// Combined list of all known card names (Pokemon + Trainers + Catalog)
+const ALL_KNOWN_CARDS = [
+  ...new Set([...KNOWN_POKEMON_NAMES, ...KNOWN_TRAINER_CARDS, ...CATALOG_CARD_NAMES])
+];
 
 // Pattern: card number like "118/094" or "013/094"
 const CARD_NUMBER_PATTERN = /\b\d{1,3}\s*\/\s*\d{2,3}\b/;
@@ -19,8 +22,8 @@ const CARD_NUMBER_PATTERN = /\b\d{1,3}\s*\/\s*\d{2,3}\b/;
 
 const POKEMON_TCG_API_BASE = 'https://api.pokemontcg.io/v2';
 
-// Extended card database with sets
-const POKEMON_SETS = [
+// Extended card database with sets (merged from static list + catalog)
+const STATIC_SETS = [
   'Base Set', 'Jungle', 'Fossil', 'Team Rocket', 'Gym Heroes', 'Gym Challenge',
   'Neo Genesis', 'Neo Discovery', 'Neo Revelation', 'Neo Destiny',
   'Expedition', 'Aquapolis', 'Skyridge',
@@ -44,6 +47,7 @@ const POKEMON_SETS = [
   'Shrouded Fable', 'Stellar Crown', 'Surging Sparks', 'Prismatic Evolutions',
   'Mega Evolution', 'Phantasmal Flames'
 ];
+const POKEMON_SETS = [...new Set([...STATIC_SETS, ...CATALOG_SET_NAMES])];
 
 const CARD_TYPES = ['V', 'VMAX', 'VSTAR', 'ex', 'EX', 'GX', 'Tag Team', 'BREAK',
   'Mega', 'Level X', 'Prime', 'LEGEND', 'Full Art', 'Alt Art',

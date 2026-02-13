@@ -147,6 +147,10 @@ enum Rarity {
   uncommon
   rare
   holoRare
+  ultraRare
+  illustrationRare
+  specialIllustrationRare
+  megaIllustrationRare
   other
 }
 
