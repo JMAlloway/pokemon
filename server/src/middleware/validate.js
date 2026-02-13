@@ -1,6 +1,8 @@
 const RARITY_VALUES = ['common', 'uncommon', 'rare', 'holoRare', 'other'];
 const CONDITION_VALUES = ['mint', 'nearMint', 'excellent', 'good', 'fair', 'poor'];
 const FREQUENCY_VALUES = ['manual', 'hourly', 'fourHourly', 'daily', 'weekly'];
+const GRADED_VALUES = ['yes', 'no'];
+const LANGUAGE_VALUES = ['English', 'Japanese'];
 
 export function sanitizeString(str) {
   if (typeof str !== 'string') return str;
@@ -8,7 +10,7 @@ export function sanitizeString(str) {
 }
 
 export function validateSearchQuery(req, res, next) {
-  const { cardName, set, rarity, condition, searchFrequency, priceThresholdPercent } = req.body;
+  const { cardName, set, rarity, condition, searchFrequency, priceThresholdPercent, graded, language } = req.body;
 
   if (!cardName || typeof cardName !== 'string' || cardName.trim().length === 0) {
     return res.status(400).json({ error: 'Card name is required' });
@@ -24,6 +26,12 @@ export function validateSearchQuery(req, res, next) {
   }
   if (condition && !CONDITION_VALUES.includes(condition)) {
     return res.status(400).json({ error: `Invalid condition. Must be one of: ${CONDITION_VALUES.join(', ')}` });
+  }
+  if (graded && !GRADED_VALUES.includes(graded)) {
+    return res.status(400).json({ error: `Invalid graded value. Must be one of: ${GRADED_VALUES.join(', ')}` });
+  }
+  if (language && !LANGUAGE_VALUES.includes(language)) {
+    return res.status(400).json({ error: `Invalid language. Must be one of: ${LANGUAGE_VALUES.join(', ')}` });
   }
   if (searchFrequency && !FREQUENCY_VALUES.includes(searchFrequency)) {
     return res.status(400).json({ error: `Invalid frequency. Must be one of: ${FREQUENCY_VALUES.join(', ')}` });

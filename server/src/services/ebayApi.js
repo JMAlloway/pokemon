@@ -271,21 +271,27 @@ async function ebayFetch(endpoint, options = {}) {
   }
 }
 
+// eBay category ID for "Collectible Card Games > Pokémon Individual Cards"
+const POKEMON_CARDS_CATEGORY = '183454';
+
 /**
  * Search eBay for active Pokemon card listings.
  * Uses Browse API /buy/browse/v1/item_summary/search
  */
-export async function searchListings({ cardName, set, rarity, condition, limit = 50 }) {
-  let query = `Pokemon card ${cardName}`;
+export async function searchListings({ cardName, set, rarity, condition, graded, language, limit = 50 }) {
+  // Use the card name directly — category_ids scopes to Pokemon cards
+  // so we don't need to prepend "Pokemon card" which over-constrains specific searches
+  let query = cardName;
   if (set) query += ` ${set}`;
 
   const params = new URLSearchParams({
     q: query,
+    category_ids: POKEMON_CARDS_CATEGORY,
     limit: String(Math.min(limit, 200))
   });
 
-  // Category filter — sandbox may not support all category_ids
-  // Use filter approach for broader compatibility
+  // Build filter conditions
+  const filters = [];
   if (condition) {
     const conditionMap = {
       mint: '1000',
@@ -296,8 +302,23 @@ export async function searchListings({ cardName, set, rarity, condition, limit =
       poor: '6000'
     };
     if (conditionMap[condition]) {
-      params.append('filter', `conditionIds:{${conditionMap[condition]}}`);
+      filters.push(`conditionIds:{${conditionMap[condition]}}`);
     }
+  }
+  if (filters.length > 0) {
+    params.append('filter', filters.join(','));
+  }
+
+  // Build aspect_filter for graded status and language
+  const aspects = [];
+  if (graded) {
+    aspects.push(`Graded:{${graded === 'yes' ? 'Yes' : 'No'}}`);
+  }
+  if (language) {
+    aspects.push(`Language:{${language}}`);
+  }
+  if (aspects.length > 0) {
+    params.append('aspect_filter', `categoryId:${POKEMON_CARDS_CATEGORY},${aspects.join(',')}`);
   }
 
   try {
@@ -352,14 +373,27 @@ export async function searchListings({ cardName, set, rarity, condition, limit =
  * Note: The Browse API in sandbox has limited completed items data.
  * In production, this queries real sold listings.
  */
-export async function searchSoldListings({ cardName, set, days = 90 }) {
-  const query = `Pokemon card ${cardName}${set ? ' ' + set : ''}`;
+export async function searchSoldListings({ cardName, set, graded, language, days = 90 }) {
+  const query = `${cardName}${set ? ' ' + set : ''}`;
 
   const params = new URLSearchParams({
     q: query,
+    category_ids: POKEMON_CARDS_CATEGORY,
     limit: '100',
     filter: `buyingOptions:{FIXED_PRICE|AUCTION},priceCurrency:USD`
   });
+
+  // Apply same aspect filters to sold listings for accurate baseline
+  const aspects = [];
+  if (graded) {
+    aspects.push(`Graded:{${graded === 'yes' ? 'Yes' : 'No'}}`);
+  }
+  if (language) {
+    aspects.push(`Language:{${language}}`);
+  }
+  if (aspects.length > 0) {
+    params.append('aspect_filter', `categoryId:${POKEMON_CARDS_CATEGORY},${aspects.join(',')}`);
+  }
 
   try {
     const data = await withRetry(() =>

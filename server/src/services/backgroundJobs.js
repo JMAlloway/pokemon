@@ -107,7 +107,9 @@ export async function executeSearch(searchQuery) {
       cardName: searchQuery.cardName,
       set: searchQuery.set,
       rarity: searchQuery.rarity,
-      condition: searchQuery.condition
+      condition: searchQuery.condition,
+      graded: searchQuery.graded,
+      language: searchQuery.language
     });
     console.log(`[BackgroundJobs] Got ${listings.length} listings for "${searchQuery.cardName}"`);
 

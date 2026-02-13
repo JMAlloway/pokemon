@@ -14,10 +14,10 @@ const useSearchStore = create((set, get) => ({
   cacheTimestamp: null,
   suggestions: [],
 
-  search: async ({ cardName, set: cardSet, rarity, condition }) => {
+  search: async ({ cardName, set: cardSet, rarity, condition, graded, language }) => {
     set({ isSearching: true, error: null, cached: false });
     try {
-      const data = await api.post('/api/search', { cardName, set: cardSet, rarity, condition });
+      const data = await api.post('/api/search', { cardName, set: cardSet, rarity, condition, graded, language });
       set({
         listings: data.listings || [],
         baseline: data.baseline,

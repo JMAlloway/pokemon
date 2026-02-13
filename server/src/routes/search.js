@@ -12,7 +12,7 @@ const router = Router();
 router.post('/', validateSearchQuery, async (req, res) => {
   const startTime = Date.now();
   try {
-    const { cardName, set, rarity, condition } = req.body;
+    const { cardName, set, rarity, condition, graded, language } = req.body;
     console.log(`[Search] POST /api/search for "${cardName}"`);
 
     // Check rate limit
@@ -57,12 +57,15 @@ router.post('/', validateSearchQuery, async (req, res) => {
       });
     }
 
+    // Attach runtime filters (not persisted to SearchQuery model)
+    const searchWithFilters = { ...searchQuery, graded, language };
+
     // Execute search with a 30-second timeout to prevent hanging
     const searchTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Search timed out after 30 seconds')), 30000)
     );
     const result = await Promise.race([
-      executeSearch(searchQuery),
+      executeSearch(searchWithFilters),
       searchTimeout
     ]);
 

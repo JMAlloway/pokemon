@@ -20,11 +20,25 @@ const CONDITION_OPTIONS = [
   { value: 'poor', label: 'Poor' }
 ];
 
+const GRADED_OPTIONS = [
+  { value: '', label: 'Any' },
+  { value: 'no', label: 'Ungraded Only' },
+  { value: 'yes', label: 'Graded Only' }
+];
+
+const LANGUAGE_OPTIONS = [
+  { value: '', label: 'Any Language' },
+  { value: 'English', label: 'English' },
+  { value: 'Japanese', label: 'Japanese' }
+];
+
 export default function SearchForm({ onSearch, isSearching, initialValues = {} }) {
   const [cardName, setCardName] = useState(initialValues.cardName || '');
   const [set, setSet] = useState(initialValues.set || '');
   const [rarity, setRarity] = useState(initialValues.rarity || '');
   const [condition, setCondition] = useState(initialValues.condition || '');
+  const [graded, setGraded] = useState(initialValues.graded || '');
+  const [language, setLanguage] = useState(initialValues.language || '');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const { suggestions, getAutocomplete } = useSearchStore();
   const inputRef = useRef(null);
@@ -60,7 +74,9 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
       cardName: cardName.trim(),
       set: set.trim() || undefined,
       rarity: rarity || undefined,
-      condition: condition || undefined
+      condition: condition || undefined,
+      graded: graded || undefined,
+      language: language || undefined
     });
   };
 
@@ -158,6 +174,40 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
             className={inputClasses}
           >
             {CONDITION_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Graded */}
+        <div className="w-36">
+          <label htmlFor="graded" className="block text-xs font-medium text-text-secondary mb-1">
+            Graded
+          </label>
+          <select
+            id="graded"
+            value={graded}
+            onChange={(e) => setGraded(e.target.value)}
+            className={inputClasses}
+          >
+            {GRADED_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Language */}
+        <div className="w-36">
+          <label htmlFor="language" className="block text-xs font-medium text-text-secondary mb-1">
+            Language
+          </label>
+          <select
+            id="language"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            className={inputClasses}
+          >
+            {LANGUAGE_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
