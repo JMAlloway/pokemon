@@ -404,21 +404,132 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
 }
 
 /**
+ * Search eBay Finding API for real completed/sold items.
+ *
+ * The Finding API (findCompletedItems) returns actual sold auction and BIN
+ * results with their final selling prices — far more accurate than using
+ * active listing asking prices as a proxy.
+ *
+ * Only requires the App ID (EBAY_APP_ID), no OAuth token needed.
+ */
+async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
+  const appId = process.env.EBAY_APP_ID;
+  if (!appId) return null;
+
+  const isProduction = process.env.EBAY_ENVIRONMENT === 'production';
+  const baseUrl = isProduction
+    ? 'https://svcs.ebay.com/services/search/FindingService/v1'
+    : 'https://svcs.sandbox.ebay.com/services/search/FindingService/v1';
+
+  const keywords = `${cardName}${set ? ' ' + set : ''}`;
+
+  const params = new URLSearchParams({
+    'OPERATION-NAME': 'findCompletedItems',
+    'SERVICE-VERSION': '1.13.0',
+    'SECURITY-APPNAME': appId,
+    'RESPONSE-DATA-FORMAT': 'JSON',
+    'REST-PAYLOAD': '',
+    'keywords': keywords,
+    'categoryId': POKEMON_CARDS_CATEGORY,
+    'itemFilter(0).name': 'SoldItemsOnly',
+    'itemFilter(0).value': 'true',
+    'itemFilter(1).name': 'EndTimeFrom',
+    'itemFilter(1).value': new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
+    'paginationInput.entriesPerPage': '100',
+    'sortOrder': 'EndTimeSoonest'
+  });
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    recordRequest();
+    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+      signal: controller.signal,
+      headers: { 'X-EBAY-SOA-GLOBAL-ID': 'EBAY-US' }
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.warn(`[eBay Finding API] HTTP ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const result = data?.findCompletedItemsResponse?.[0];
+
+    if (result?.ack?.[0] !== 'Success' && result?.ack?.[0] !== 'Warning') {
+      const errMsg = result?.errorMessage?.[0]?.error?.[0]?.message?.[0] || 'Unknown error';
+      console.warn(`[eBay Finding API] ${errMsg}`);
+      return null;
+    }
+
+    const items = result?.searchResult?.[0]?.item;
+    if (!items || items.length === 0) {
+      console.log(`[eBay Finding API] No sold items found for "${keywords}"`);
+      return null;
+    }
+
+    const soldListings = items
+      .filter(item => item.sellingStatus?.[0]?.sellingState?.[0] === 'EndedWithSales')
+      .map(item => {
+        const price = parseFloat(item.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ || 0);
+        const shipping = item.shippingInfo?.[0]?.shippingServiceCost?.[0]?.__value__;
+        const shippingCost = shipping !== undefined ? parseFloat(shipping) : null;
+        const endTime = item.listingInfo?.[0]?.endTime?.[0];
+
+        return {
+          cardName,
+          set: set || null,
+          soldPrice: price,
+          shippingCost,
+          soldAt: endTime ? new Date(endTime) : new Date(),
+          source: 'eBay-sold'
+        };
+      })
+      .filter(item => item.soldPrice > 0);
+
+    console.log(`[eBay Finding API] Found ${soldListings.length} real sold comps for "${keywords}"`);
+    return soldListings.length > 0 ? soldListings : null;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.warn('[eBay Finding API] Request timed out');
+    } else {
+      console.warn(`[eBay Finding API] ${error.message}`);
+    }
+    return null;
+  }
+}
+
+/**
  * Search eBay for market pricing data to establish a baseline.
  *
- * The Browse API doesn't expose completed/sold items, so in sandbox mode
- * we use active listing prices as reference points with a discount factor
- * applied (asking prices are typically ~15% higher than actual sold prices
- * for Pokemon cards).
- *
- * Results are marked with source: 'eBay-active-estimate' so the scoring
- * system knows this is estimated data rather than real sold comps.
+ * Strategy (in order of preference):
+ * 1. Finding API: real sold/completed items with actual final selling prices
+ * 2. Browse API fallback: active listing prices with a discount factor
+ *    (less accurate — asking prices include moonshot listings)
+ * 3. Sample data: generated synthetic data for development/demo
  */
 // Asking prices are typically higher than sold prices. This factor adjusts
 // active listing prices down to approximate what cards actually sell for.
 const ACTIVE_TO_SOLD_DISCOUNT = 0.85;
 
 export async function searchSoldListings({ cardName, set, graded, language, days = 90 }) {
+  // 1. Try Finding API for real sold comps (most accurate)
+  try {
+    const realSold = await searchCompletedSoldItems({ cardName, set, days });
+    if (realSold && realSold.length >= 3) {
+      return realSold;
+    }
+    if (realSold && realSold.length > 0) {
+      console.log(`[eBay API] Only ${realSold.length} sold comps found, supplementing with active estimates`);
+    }
+  } catch (err) {
+    console.warn(`[eBay API] Finding API failed, falling back to active estimates:`, err.message);
+  }
+
+  // 2. Fallback: use active listing prices with discount factor
   const query = `${cardName}${set ? ' ' + set : ''}`;
 
   const params = new URLSearchParams({
@@ -474,7 +585,7 @@ export async function searchSoldListings({ cardName, set, graded, language, days
       return generateSampleSoldListings(cardName, set, days);
     }
 
-    console.log(`[eBay API] Baseline from ${pricePoints.length} active listings (×${ACTIVE_TO_SOLD_DISCOUNT} discount applied)`);
+    console.log(`[eBay API] Baseline from ${pricePoints.length} active listings (×${ACTIVE_TO_SOLD_DISCOUNT} discount applied) — active estimate, not real sold data`);
     return pricePoints;
   } catch (error) {
     if (error.statusCode === 429) throw error;
