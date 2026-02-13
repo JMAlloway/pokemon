@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-
+import { flagPriceOutliers } from '../services/dealScoring.js';
 
 const router = Router();
 
@@ -51,7 +51,7 @@ router.get('/:ebayListingId', async (req, res) => {
         savedListingId: listing.savedListing?.id || null,
         savedListing: undefined
       },
-      recentSoldListings: recentSold,
+      recentSoldListings: flagPriceOutliers(recentSold),
       alsoFoundIn: otherSearches.map(l => ({
         searchId: l.searchQuery.id,
         searchName: `${l.searchQuery.cardName}${l.searchQuery.set ? ' - ' + l.searchQuery.set : ''}`

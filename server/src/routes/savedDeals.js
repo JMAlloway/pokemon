@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-
+import { flagPriceOutliers } from '../services/dealScoring.js';
 
 const router = Router();
 
@@ -197,7 +197,7 @@ router.get('/:id', async (req, res) => {
       take: 20
     });
 
-    res.json({ deal, recentSoldListings: recentSold });
+    res.json({ deal, recentSoldListings: flagPriceOutliers(recentSold) });
   } catch (error) {
     console.error('Get saved deal error:', error);
     res.status(500).json({ error: 'Failed to load deal' });

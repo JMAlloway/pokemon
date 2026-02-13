@@ -9,8 +9,34 @@
  */
 
 /**
+ * Detect price outliers using the IQR (Interquartile Range) method.
+ * Returns the input array with an `isOutlier` flag added to each item.
+ *
+ * @param {Array} listings - Array of objects with a `soldPrice` property
+ * @param {number} multiplier - IQR multiplier (default 1.5, use 2.0 for less aggressive filtering)
+ * @returns {Array} Same array with `isOutlier: boolean` added to each item
+ */
+export function flagPriceOutliers(listings, multiplier = 1.5) {
+  if (!listings || listings.length < 4) {
+    return listings.map(l => ({ ...l, isOutlier: false }));
+  }
+
+  const prices = listings.map(l => Number(l.soldPrice)).sort((a, b) => a - b);
+  const q1 = prices[Math.floor(prices.length * 0.25)];
+  const q3 = prices[Math.floor(prices.length * 0.75)];
+  const iqr = q3 - q1;
+  const lowerBound = q1 - multiplier * iqr;
+  const upperBound = q3 + multiplier * iqr;
+
+  return listings.map(l => {
+    const price = Number(l.soldPrice);
+    return { ...l, isOutlier: price < lowerBound || price > upperBound };
+  });
+}
+
+/**
  * Calculate recency-weighted average price from recent sold listings.
- * More recent sales get higher weight.
+ * More recent sales get higher weight. Outliers are excluded from the calculation.
  *
  * @param {Array} soldListings - Array of { soldPrice, soldAt, daysOld }
  * @returns {{ weightedPrice: number, recencyScore: number, sampleSize: number }}
@@ -20,12 +46,17 @@ export function calculateRecencyWeightedBaseline(soldListings) {
     return { weightedPrice: null, recencyScore: 0, sampleSize: 0 };
   }
 
+  // Filter out price outliers before calculating baseline
+  const flagged = flagPriceOutliers(soldListings);
+  const filtered = flagged.filter(l => !l.isOutlier);
+  const listingsToUse = filtered.length > 0 ? filtered : soldListings;
+
   let totalWeight = 0;
   let weightedSum = 0;
 
   const now = new Date();
 
-  for (const listing of soldListings) {
+  for (const listing of listingsToUse) {
     const soldDate = new Date(listing.soldAt);
     const daysOld = Math.max(0, Math.floor((now - soldDate) / (1000 * 60 * 60 * 24)));
 
@@ -42,20 +73,20 @@ export function calculateRecencyWeightedBaseline(soldListings) {
 
   // Recency score: how fresh is the data? (0-100)
   // Based on average recency of listings and sample size
-  const avgDaysOld = soldListings.reduce((sum, l) => {
+  const avgDaysOld = listingsToUse.reduce((sum, l) => {
     const d = Math.floor((now - new Date(l.soldAt)) / (1000 * 60 * 60 * 24));
     return sum + d;
-  }, 0) / soldListings.length;
+  }, 0) / listingsToUse.length;
 
   // Better score for fresher data and more samples
   const freshnessScore = Math.max(0, 100 - (avgDaysOld / 90) * 100);
-  const sampleBonus = Math.min(20, soldListings.length * 4);
+  const sampleBonus = Math.min(20, listingsToUse.length * 4);
   const recencyScore = Math.min(100, Math.round(freshnessScore * 0.8 + sampleBonus));
 
   return {
     weightedPrice: weightedPrice ? Math.round(weightedPrice * 100) / 100 : null,
     recencyScore,
-    sampleSize: soldListings.length
+    sampleSize: listingsToUse.length
   };
 }
 

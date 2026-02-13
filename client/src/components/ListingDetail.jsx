@@ -121,7 +121,12 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
           {soldComps.length > 0 && (
             <div className="bg-bg-card border border-border rounded-lg p-4">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-3">
-                Recent Sold Comps ({soldComps.length})
+                Recent Sold Comps ({soldComps.filter(s => !s.isOutlier).length})
+                {soldComps.some(s => s.isOutlier) && (
+                  <span className="font-normal normal-case tracking-normal ml-1">
+                    · {soldComps.filter(s => s.isOutlier).length} outlier{soldComps.filter(s => s.isOutlier).length > 1 ? 's' : ''} excluded
+                  </span>
+                )}
               </h4>
               <div className="space-y-2">
                 {soldComps.map((sold, i) => {
@@ -130,10 +135,16 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   const recencyColor = daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
 
                   return (
-                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+                    <div key={i} className={`flex items-center justify-between py-1.5 border-b border-border last:border-0 ${sold.isOutlier ? 'opacity-40' : ''}`}>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-text-primary">${Number(sold.soldPrice).toFixed(2)}</span>
-                        <span className={`text-xs font-medium ${recencyColor}`}>{recencyLabel}</span>
+                        <span className={`text-sm font-medium ${sold.isOutlier ? 'line-through text-text-muted' : 'text-text-primary'}`}>
+                          ${Number(sold.soldPrice).toFixed(2)}
+                        </span>
+                        {sold.isOutlier ? (
+                          <span className="text-xs font-medium text-error/70">Outlier</span>
+                        ) : (
+                          <span className={`text-xs font-medium ${recencyColor}`}>{recencyLabel}</span>
+                        )}
                       </div>
                       <span className="text-xs text-text-muted">
                         {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}

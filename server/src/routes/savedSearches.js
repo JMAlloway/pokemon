@@ -3,6 +3,7 @@ import prisma from '../db.js';
 
 import { validateSearchQuery } from '../middleware/validate.js';
 import { executeSearch } from '../services/backgroundJobs.js';
+import { flagPriceOutliers } from '../services/dealScoring.js';
 import { validateCardName } from '../services/pokemonTcg.js';
 import { getRateLimitStatus } from '../services/ebayApi.js';
 
@@ -284,7 +285,7 @@ router.get('/:id/listings', async (req, res) => {
         savedListingId: l.savedListing?.id || null,
         savedListing: undefined
       })),
-      recentSoldListings: soldListings,
+      recentSoldListings: flagPriceOutliers(soldListings),
       searchQuery: search
     });
   } catch (error) {

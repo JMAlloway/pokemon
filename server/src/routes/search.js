@@ -5,6 +5,7 @@ import { validateSearchQuery } from '../middleware/validate.js';
 import { executeSearch } from '../services/backgroundJobs.js';
 import { validateCardName, getAutocompleteSuggestions, getSetSuggestions } from '../services/pokemonTcg.js';
 import { getRateLimitStatus } from '../services/ebayApi.js';
+import { flagPriceOutliers } from '../services/dealScoring.js';
 
 const router = Router();
 
@@ -119,7 +120,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
 
     res.json({
       listings,
-      recentSoldListings,
+      recentSoldListings: flagPriceOutliers(recentSoldListings),
       baseline: result.baseline,
       recencyScore: result.recencyScore,
       sampleSize: result.sampleSize,
