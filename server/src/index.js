@@ -61,24 +61,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve static frontend in production
-const clientDistPath = path.join(__dirname, '../../client/dist');
-app.use(express.static(clientDistPath));
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
-    if (err) {
-      res.status(404).json({ error: 'Not found' });
-    }
-  });
-});
-
-// Error handling
-app.use((err, req, res, _next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
 // Ensure a default user exists (single-user app, no login required)
 async function ensureDefaultUser() {
   let user = await prisma.user.findFirst();
@@ -114,6 +96,24 @@ async function start() {
     app.use('/api/saved-searches', savedSearchRoutes);
     app.use('/api/saved-deals', savedDealRoutes);
     app.use('/api/listings', listingRoutes);
+
+    // Serve static frontend in production (after API routes so they take priority)
+    const clientDistPath = path.join(__dirname, '../../client/dist');
+    app.use(express.static(clientDistPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+        if (err) {
+          res.status(404).json({ error: 'Not found' });
+        }
+      });
+    });
+
+    // Error handling (must be after all routes to catch their errors)
+    app.use((err, req, res, _next) => {
+      console.error('Unhandled error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    });
 
     // Initialize background jobs
     initializeBackgroundJobs();

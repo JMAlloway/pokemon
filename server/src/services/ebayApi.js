@@ -404,12 +404,20 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
 }
 
 /**
- * Search eBay for recently sold/completed Pokemon card listings.
- * Used to establish market baseline pricing.
+ * Search eBay for market pricing data to establish a baseline.
  *
- * Note: The Browse API in sandbox has limited completed items data.
- * In production, this queries real sold listings.
+ * The Browse API doesn't expose completed/sold items, so in sandbox mode
+ * we use active listing prices as reference points with a discount factor
+ * applied (asking prices are typically ~15% higher than actual sold prices
+ * for Pokemon cards).
+ *
+ * Results are marked with source: 'eBay-active-estimate' so the scoring
+ * system knows this is estimated data rather than real sold comps.
  */
+// Asking prices are typically higher than sold prices. This factor adjusts
+// active listing prices down to approximate what cards actually sell for.
+const ACTIVE_TO_SOLD_DISCOUNT = 0.85;
+
 export async function searchSoldListings({ cardName, set, graded, language, days = 90 }) {
   const query = `${cardName}${set ? ' ' + set : ''}`;
 
@@ -420,7 +428,7 @@ export async function searchSoldListings({ cardName, set, graded, language, days
     filter: `buyingOptions:{FIXED_PRICE|AUCTION},priceCurrency:USD`
   });
 
-  // Apply same aspect filters to sold listings for accurate baseline
+  // Apply same aspect filters for accurate baseline
   const aspects = [];
   if (graded) {
     aspects.push(`Graded:{${graded === 'yes' ? 'Yes' : 'No'}}`);
@@ -441,8 +449,8 @@ export async function searchSoldListings({ cardName, set, graded, language, days
       return generateSampleSoldListings(cardName, set, days);
     }
 
-    // From active listings, use prices as market reference points
-    // (sandbox doesn't have completed items endpoint access)
+    // Use active listing prices as market reference, discounted to approximate
+    // actual sold values (Browse API doesn't have a completed items endpoint)
     const pricePoints = data.itemSummaries
       .filter(item => item.price?.value)
       .map(item => {
@@ -450,13 +458,15 @@ export async function searchSoldListings({ cardName, set, graded, language, days
         const shippingCost = shippingOption?.shippingCost?.value !== undefined
           ? parseFloat(shippingOption.shippingCost.value)
           : null;
+        const askingPrice = parseFloat(item.price.value);
+        const estimatedSoldPrice = Math.round(askingPrice * ACTIVE_TO_SOLD_DISCOUNT * 100) / 100;
         return {
           cardName,
           set: set || null,
-          soldPrice: parseFloat(item.price.value),
+          soldPrice: estimatedSoldPrice,
           shippingCost,
           soldAt: new Date(item.itemCreationDate || Date.now()),
-          source: 'eBay'
+          source: 'eBay-active-estimate'
         };
       });
 
@@ -464,6 +474,7 @@ export async function searchSoldListings({ cardName, set, graded, language, days
       return generateSampleSoldListings(cardName, set, days);
     }
 
+    console.log(`[eBay API] Baseline from ${pricePoints.length} active listings (×${ACTIVE_TO_SOLD_DISCOUNT} discount applied)`);
     return pricePoints;
   } catch (error) {
     if (error.statusCode === 429) throw error;

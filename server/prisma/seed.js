@@ -64,7 +64,7 @@ async function seed() {
 
     // Gengar variants
     { correctSpelling: 'Gengar', commonMisspelling: 'Genger', category: 'cardName', levenshteinDistance: 1 },
-    { correctSpelling: 'Gengar', commonMisspelling: 'Genger', category: 'cardName', levenshteinDistance: 1 },
+    { correctSpelling: 'Gengar', commonMisspelling: 'Gengr', category: 'cardName', levenshteinDistance: 1 },
 
     // Garchomp variants
     { correctSpelling: 'Garchomp', commonMisspelling: 'Garchopm', category: 'cardName', levenshteinDistance: 1 },
