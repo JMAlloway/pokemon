@@ -113,38 +113,37 @@ export async function executeSearch(searchQuery) {
     });
     console.log(`[BackgroundJobs] Got ${listings.length} listings for "${searchQuery.cardName}"`);
 
-    // 2. Derive baseline pricing from active listings (avoids a duplicate API call)
-    const pricePoints = listings
-      .filter(l => l.currentPrice > 0)
-      .map(l => ({
-        soldPrice: l.currentPrice,
-        soldAt: new Date()
-      }));
+    // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
+    let soldData = [];
 
-    // Also check DB for any previously stored sold listings
-    let storedSold = [];
+    // Check DB for previously stored sold listings
     try {
-      storedSold = await prisma.recentSoldListing.findMany({
+      const storedSold = await prisma.recentSoldListing.findMany({
         where: { cardName: searchQuery.cardName },
         orderBy: { soldAt: 'desc' },
         take: 100
       });
+      soldData = storedSold.map(s => ({ soldPrice: Number(s.soldPrice), soldAt: s.soldAt }));
     } catch (dbErr) {
       console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
     }
 
-    const allPriceData = [
-      ...storedSold.map(s => ({ soldPrice: Number(s.soldPrice), soldAt: s.soldAt })),
-      ...pricePoints
-    ];
-
-    // Store price data for comps display and future baseline calculations
-    if (pricePoints.length > 0) {
-      await storeSoldListings(pricePoints, searchQuery.cardName, searchQuery.set);
+    // If no sold data in DB, fetch from eBay sold/completed API
+    if (soldData.length === 0) {
+      try {
+        const { searchSoldListings } = await import('./ebayApi.js');
+        const freshSold = await searchSoldListings(searchQuery.cardName, searchQuery.set);
+        if (freshSold.length > 0) {
+          await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
+          soldData = freshSold.map(s => ({ soldPrice: Number(s.soldPrice), soldAt: new Date(s.soldAt) }));
+        }
+      } catch (soldErr) {
+        console.warn(`[BackgroundJobs] Could not fetch sold listings:`, soldErr.message);
+      }
     }
 
-    // 3. Calculate recency-weighted baseline
-    const baseline = calculateRecencyWeightedBaseline(allPriceData);
+    // 3. Calculate recency-weighted baseline from actual sold data
+    const baseline = calculateRecencyWeightedBaseline(soldData);
 
     // 4. Analyze listings for typos
     const analyzedListings = batchAnalyzeTitles(listings, searchQuery.cardName);
