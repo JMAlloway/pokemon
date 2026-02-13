@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import SearchForm from '../components/SearchForm';
 import ListingCard from '../components/ListingCard';
+import SearchLoadingAnimation from '../components/SearchLoadingAnimation';
 import useSearchStore from '../store/searchStore';
 
 export default function SearchPage() {
@@ -69,8 +70,11 @@ export default function SearchPage() {
         </div>
       )}
 
+      {/* Loading animation */}
+      {isSearching && <SearchLoadingAnimation />}
+
       {/* Results */}
-      {listings.length > 0 && (
+      {!isSearching && listings.length > 0 && (
         <div className="mt-6">
           {/* Stats bar */}
           <div className="flex items-center justify-between mb-4">
