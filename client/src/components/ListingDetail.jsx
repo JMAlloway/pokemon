@@ -253,7 +253,9 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   const recencyLabel = daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
                   const recencyColor = daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
                   const soldShipping = sold.shippingCost != null ? Number(sold.shippingCost) : null;
-                  const soldTotal = Number(sold.soldPrice) + (soldShipping || 0);
+                  const soldTotal = soldShipping != null
+                    ? Number(sold.soldPrice) + soldShipping
+                    : Number(sold.soldPrice);
 
                   return (
                     <div key={i} className={`flex items-center justify-between py-1.5 border-b border-border last:border-0 ${sold.isOutlier ? 'opacity-40' : ''}`}>

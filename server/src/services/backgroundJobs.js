@@ -250,7 +250,8 @@ export async function executeSearch(searchQuery) {
         take: 100
       });
       soldData = storedSold.map(s => ({
-        soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
+        soldPrice: Number(s.soldPrice),
+        shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
         soldAt: s.soldAt
       }));
     } catch (dbErr) {
@@ -265,7 +266,8 @@ export async function executeSearch(searchQuery) {
         if (freshSold.length > 0) {
           await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
           soldData = freshSold.map(s => ({
-            soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
+            soldPrice: Number(s.soldPrice),
+            shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
             soldAt: new Date(s.soldAt)
           }));
         }
@@ -326,9 +328,8 @@ export async function executeSearch(searchQuery) {
         : listing.currentPrice;
       const shippingKnown = listing.shippingCost != null;
       const shipping = shippingKnown ? Number(listing.shippingCost) : 0;
-      const totalPrice = effectivePrice + shipping;
       const priceGapPercent = baseline.weightedPrice && shippingKnown
-        ? calculatePriceGap(baseline.weightedPrice, totalPrice)
+        ? calculatePriceGap(baseline.weightedPrice, effectivePrice + shipping)
         : null;
 
       const dealScore = calculateDealScore({

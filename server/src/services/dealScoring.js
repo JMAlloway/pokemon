@@ -15,7 +15,13 @@
  * Detect price outliers using the IQR (Interquartile Range) method.
  * Returns the input array with an `isOutlier` flag added to each item.
  *
- * @param {Array} listings - Array of objects with a `soldPrice` property
+ * Only uses listings where shipping cost is known for IQR bounds
+ * calculation, since mixing item-only prices with item+shipping totals
+ * skews the distribution and can flag legitimate prices as outliers.
+ * Listings with unknown shipping are never marked as outliers (they'll
+ * be handled separately in baseline calculation).
+ *
+ * @param {Array} listings - Array of objects with soldPrice and optional shippingCost
  * @param {number} multiplier - IQR multiplier (default 1.5, use 2.0 for less aggressive filtering)
  * @returns {Array} Same array with `isOutlier: boolean` added to each item
  */
@@ -24,9 +30,25 @@ export function flagPriceOutliers(listings, multiplier = 1.5) {
     return listings.map(l => ({ ...l, isOutlier: false }));
   }
 
-  // Use total price (item + shipping) for outlier detection
   const totalPrice = l => Number(l.soldPrice) + (l.shippingCost != null ? Number(l.shippingCost) : 0);
-  const prices = listings.map(totalPrice).sort((a, b) => a - b);
+
+  // Only use listings with known shipping for IQR bounds
+  const withShipping = listings.filter(l => l.shippingCost != null);
+  if (withShipping.length < 4) {
+    // Not enough data with known shipping — fall back to all items using item price only
+    const itemPrices = listings.map(l => Number(l.soldPrice)).sort((a, b) => a - b);
+    const q1 = itemPrices[Math.floor(itemPrices.length * 0.25)];
+    const q3 = itemPrices[Math.floor(itemPrices.length * 0.75)];
+    const iqr = q3 - q1;
+    const lowerBound = q1 - multiplier * iqr;
+    const upperBound = q3 + multiplier * iqr;
+    return listings.map(l => ({
+      ...l,
+      isOutlier: Number(l.soldPrice) < lowerBound || Number(l.soldPrice) > upperBound
+    }));
+  }
+
+  const prices = withShipping.map(totalPrice).sort((a, b) => a - b);
   const q1 = prices[Math.floor(prices.length * 0.25)];
   const q3 = prices[Math.floor(prices.length * 0.75)];
   const iqr = q3 - q1;
@@ -34,6 +56,10 @@ export function flagPriceOutliers(listings, multiplier = 1.5) {
   const upperBound = q3 + multiplier * iqr;
 
   return listings.map(l => {
+    if (l.shippingCost == null) {
+      // Unknown shipping: can't reliably compare to total-price IQR bounds
+      return { ...l, isOutlier: false };
+    }
     const price = totalPrice(l);
     return { ...l, isOutlier: price < lowerBound || price > upperBound };
   });
@@ -68,7 +94,9 @@ export function calculateRecencyWeightedBaseline(soldListings) {
     // Weight: exponential decay. Recent sales (0-7 days) weighted much higher.
     // weight = e^(-daysOld/30) — 30-day half-life decay
     const weight = Math.exp(-daysOld / 30);
-    const price = Number(listing.soldPrice);
+    // Use total price (item + shipping) when shipping is known
+    const price = Number(listing.soldPrice)
+      + (listing.shippingCost != null ? Number(listing.shippingCost) : 0);
 
     weightedSum += price * weight;
     totalWeight += weight;
