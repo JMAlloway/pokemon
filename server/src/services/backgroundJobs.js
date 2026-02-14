@@ -252,24 +252,28 @@ export async function executeSearch(searchQuery) {
       soldData = storedSold.map(s => ({
         soldPrice: Number(s.soldPrice),
         shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
-        soldAt: s.soldAt
+        soldAt: s.soldAt,
+        ebayUrl: s.ebayUrl || null
       }));
     } catch (dbErr) {
       console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
     }
 
     // Fetch from eBay sold/completed API if no sold data in DB,
-    // or if less than half have shipping data (likely from before we parsed shippingType)
+    // or if less than half have shipping data, or if most comps are missing eBay URLs
     const shippingCoverage = soldData.length > 0
       ? soldData.filter(s => s.shippingCost !== null).length / soldData.length
       : 0;
-    if (soldData.length === 0 || shippingCoverage < 0.5) {
+    const urlCoverage = soldData.length > 0
+      ? soldData.filter(s => s.ebayUrl).length / soldData.length
+      : 0;
+    if (soldData.length === 0 || shippingCoverage < 0.5 || urlCoverage < 0.5) {
       try {
         const { searchSoldListings } = await import('./ebayApi.js');
         const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
         if (freshSold.length > 0) {
-          // Clear old comps with poor shipping data and replace with fresh ones
-          if (soldData.length > 0 && shippingCoverage < 0.5) {
+          // Clear old comps with poor shipping/URL data and replace with fresh ones
+          if (soldData.length > 0 && (shippingCoverage < 0.5 || urlCoverage < 0.5)) {
             await prisma.recentSoldListing.deleteMany({
               where: { cardName: searchQuery.cardName }
             });
