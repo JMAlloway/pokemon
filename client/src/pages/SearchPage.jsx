@@ -33,8 +33,8 @@ export default function SearchPage() {
       const bEnd = b.auctionEndDate ? new Date(b.auctionEndDate).getTime() : Infinity;
       return aEnd - bEnd;
     }
-    // Default: dealScore (typos first, then by gap)
-    return (b.hasTypo ? 1000 : 0) + (Number(b.dealScore) || 0) - ((a.hasTypo ? 1000 : 0) + (Number(a.dealScore) || 0));
+    // Default: dealScore descending
+    return (Number(b.dealScore) || 0) - (Number(a.dealScore) || 0);
   });
 
   const typoCount = listings.filter(l => l.hasTypo).length;

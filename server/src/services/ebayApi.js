@@ -474,8 +474,21 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
       .filter(item => item.sellingStatus?.[0]?.sellingState?.[0] === 'EndedWithSales')
       .map(item => {
         const price = parseFloat(item.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ || 0);
-        const shipping = item.shippingInfo?.[0]?.shippingServiceCost?.[0]?.__value__;
-        const shippingCost = shipping !== undefined ? parseFloat(shipping) : null;
+        const shippingInfo = item.shippingInfo?.[0];
+        const shippingType = shippingInfo?.shippingType?.[0]; // "Free", "Flat", "Calculated", etc.
+        const shippingValue = shippingInfo?.shippingServiceCost?.[0]?.__value__;
+
+        // Determine shipping cost:
+        // - Explicit cost provided → use it
+        // - shippingType is "Free" or "FreePickup" → $0
+        // - Otherwise → null (unknown)
+        let shippingCost = null;
+        if (shippingValue !== undefined) {
+          shippingCost = parseFloat(shippingValue);
+        } else if (shippingType === 'Free' || shippingType === 'FreePickup') {
+          shippingCost = 0;
+        }
+
         const endTime = item.listingInfo?.[0]?.endTime?.[0];
 
         return {
@@ -489,7 +502,8 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
       })
       .filter(item => item.soldPrice > 0);
 
-    console.log(`[eBay Finding API] Found ${soldListings.length} real sold comps for "${keywords}"`);
+    const withShipping = soldListings.filter(s => s.shippingCost !== null).length;
+    console.log(`[eBay Finding API] Found ${soldListings.length} real sold comps for "${keywords}" (${withShipping} with shipping data)`);
     return soldListings.length > 0 ? soldListings : null;
   } catch (error) {
     clearTimeout(timeoutId);

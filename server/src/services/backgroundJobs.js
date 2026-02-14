@@ -258,12 +258,22 @@ export async function executeSearch(searchQuery) {
       console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
     }
 
-    // If no sold data in DB, fetch from eBay sold/completed API
-    if (soldData.length === 0) {
+    // Fetch from eBay sold/completed API if no sold data in DB,
+    // or if less than half have shipping data (likely from before we parsed shippingType)
+    const shippingCoverage = soldData.length > 0
+      ? soldData.filter(s => s.shippingCost !== null).length / soldData.length
+      : 0;
+    if (soldData.length === 0 || shippingCoverage < 0.5) {
       try {
         const { searchSoldListings } = await import('./ebayApi.js');
         const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
         if (freshSold.length > 0) {
+          // Clear old comps with poor shipping data and replace with fresh ones
+          if (soldData.length > 0 && shippingCoverage < 0.5) {
+            await prisma.recentSoldListing.deleteMany({
+              where: { cardName: searchQuery.cardName }
+            });
+          }
           await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
           soldData = freshSold.map(s => ({
             soldPrice: Number(s.soldPrice),
