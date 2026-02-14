@@ -50,6 +50,45 @@ function filterByCardNumber(listings, searchCardName) {
   return filtered;
 }
 
+// Keywords in listing titles that indicate accessories/non-card items
+const NON_CARD_KEYWORDS = [
+  'magnetic case', 'card case', 'display case', 'one-touch', 'one touch',
+  'toploader', 'top loader', 'top-loader',
+  'card sleeve', 'penny sleeve', 'card protector',
+  'binder', 'portfolio',
+  'card holder', 'card stand', 'display stand',
+  'acrylic case', 'ultra pro', 'bcw',
+  'booster box', 'booster pack', 'elite trainer box', 'etb',
+  'code card', 'online code',
+  'custom token', 'damage counter', 'coin flip',
+  'playmat', 'play mat', 'deck box', 'deckbox',
+  'card slab', 'slab case',
+  'extended art case'
+];
+
+const NON_CARD_RE = new RegExp(
+  NON_CARD_KEYWORDS.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+  'i'
+);
+
+/**
+ * Filter out non-card items (cases, sleeves, holders, etc.) from search results.
+ * eBay sellers sometimes list accessories in the Pokemon cards category.
+ */
+function filterNonCardItems(listings) {
+  const before = listings.length;
+  const filtered = listings.filter(listing => {
+    const title = listing.listingTitle || listing.title || '';
+    return !NON_CARD_RE.test(title);
+  });
+
+  if (filtered.length < before) {
+    console.log(`[BackgroundJobs] Non-card filter: removed ${before - filtered.length} accessory/non-card items`);
+  }
+
+  return filtered;
+}
+
 /**
  * Initialize all scheduled background jobs.
  */
@@ -159,9 +198,12 @@ export async function executeSearch(searchQuery) {
     // 1b. Fill missing shipping costs via batch getItems call
     const listingsWithShipping = await fillMissingShipping(listings);
 
-    // 1c. Filter by card number: if the user searched for a specific card number
+    // 1c. Filter out non-card items (cases, sleeves, holders, etc.)
+    const cardOnlyListings = filterNonCardItems(listingsWithShipping);
+
+    // 1d. Filter by card number: if the user searched for a specific card number
     //     (e.g. "130/094"), drop listings that have a *different* card number in the title
-    const relevantListings = filterByCardNumber(listingsWithShipping, searchQuery.cardName);
+    const relevantListings = filterByCardNumber(cardOnlyListings, searchQuery.cardName);
 
     // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
     let soldData = [];
