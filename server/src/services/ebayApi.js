@@ -490,6 +490,8 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
         }
 
         const endTime = item.listingInfo?.[0]?.endTime?.[0];
+        const ebayItemId = item.itemId?.[0] || null;
+        const ebayUrl = item.viewItemURL?.[0] || null;
 
         return {
           cardName,
@@ -497,7 +499,9 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
           soldPrice: price,
           shippingCost,
           soldAt: endTime ? new Date(endTime) : new Date(),
-          source: 'eBay-sold'
+          source: 'eBay-sold',
+          ebayItemId,
+          ebayUrl
         };
       })
       .filter(item => item.soldPrice > 0);
@@ -591,7 +595,9 @@ export async function searchSoldListings({ cardName, set, graded, language, days
           soldPrice: estimatedSoldPrice,
           shippingCost,
           soldAt: new Date(item.itemCreationDate || Date.now()),
-          source: 'eBay-active-estimate'
+          source: 'eBay-active-estimate',
+          ebayItemId: item.itemId || null,
+          ebayUrl: item.itemWebUrl || null
         };
       });
 

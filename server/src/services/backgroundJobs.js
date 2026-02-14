@@ -582,7 +582,9 @@ async function storeSoldListings(soldListings, cardName, set) {
           shippingCost: shipping,
           soldAt: new Date(sold.soldAt),
           daysOld: Math.min(90, daysOld),
-          source: sold.source || 'eBay'
+          source: sold.source || 'eBay',
+          ebayItemId: sold.ebayItemId || null,
+          ebayUrl: sold.ebayUrl || null
         }
       });
     } catch {
