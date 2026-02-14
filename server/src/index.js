@@ -19,6 +19,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust first proxy (fixes express-rate-limit X-Forwarded-For warning)
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: false // Allow inline scripts for development
@@ -97,10 +100,7 @@ async function start() {
     app.use('/api/saved-deals', savedDealRoutes);
     app.use('/api/listings', listingRoutes);
 
-    // Initialize background jobs
-    initializeBackgroundJobs();
-
-    // Serve static frontend in production (registered after API routes so wildcard doesn't intercept)
+    // Serve static frontend in production (after API routes so they take priority)
     const clientDistPath = path.join(__dirname, '../../client/dist');
     app.use(express.static(clientDistPath));
     app.get('*', (req, res, next) => {
@@ -112,11 +112,14 @@ async function start() {
       });
     });
 
-    // Error handling
+    // Error handling (must be after all routes to catch their errors)
     app.use((err, req, res, _next) => {
       console.error('Unhandled error:', err);
       res.status(500).json({ error: 'Internal server error' });
     });
+
+    // Initialize background jobs
+    initializeBackgroundJobs();
 
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
