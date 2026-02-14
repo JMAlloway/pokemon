@@ -132,10 +132,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
     // Fetch the stored results
     const listings = await prisma.ebayListing.findMany({
       where: { searchQueryId: searchQuery.id, listingStatus: 'active' },
-      orderBy: [
-        { hasTypo: 'desc' },
-        { dealScore: 'desc' }
-      ]
+      orderBy: { dealScore: 'desc' }
     });
 
     // Get recent sold comps for the card
