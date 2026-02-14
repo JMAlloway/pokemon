@@ -619,6 +619,12 @@ export async function fillMissingShipping(listings) {
   const MAX_RATE_LIMIT_WAITS = 3;   // Give up after 3 rate-limit pauses
   let rateLimitWaits = 0;
 
+  // Diagnostics: track why items fail so we can debug hit rate issues
+  let apiErrors = 0;
+  let noShippingInResponse = 0;
+  let calculatedShipping = 0;
+  let nullResponses = 0;
+
   // Process items in concurrent batches of CONCURRENCY
   for (let i = 0; i < needsShipping.length; i += CONCURRENCY) {
     const batch = needsShipping.slice(i, i + CONCURRENCY);
@@ -627,20 +633,48 @@ export async function fillMissingShipping(listings) {
       batch.map(listing =>
         withRetry(
           () => ebayFetch(`/buy/browse/v1/item/${encodeURIComponent(listing.ebayListingId)}`),
-          1
+          3
         ).then(data => {
-          if (data) {
-            const shippingOption = data.shippingOptions?.[0];
-            const cost = shippingOption?.shippingCost?.value !== undefined
-              ? parseFloat(shippingOption.shippingCost.value)
-              : null;
-            if (cost !== null) {
-              shippingMap.set(data.itemId, cost);
+          if (!data) {
+            nullResponses++;
+            return;
+          }
+
+          const shippingOptions = data.shippingOptions;
+          if (!shippingOptions || shippingOptions.length === 0) {
+            noShippingInResponse++;
+            return;
+          }
+
+          // Try each shipping option for a usable cost
+          for (const option of shippingOptions) {
+            const costValue = option?.shippingCost?.value;
+            if (costValue !== undefined) {
+              shippingMap.set(data.itemId, parseFloat(costValue));
+              return;
+            }
+
+            // Calculated shipping: API knows shipping exists but cost depends
+            // on buyer location. Mark as calculated so we can estimate rather
+            // than treat as completely unknown.
+            if (option?.shippingCostType === 'CALCULATED') {
+              calculatedShipping++;
+              return;
             }
           }
+
+          // shippingOptions present but no cost in any option
+          noShippingInResponse++;
         })
       )
     );
+
+    // Count API-level failures
+    for (const r of results) {
+      if (r.status === 'rejected' && r.reason?.statusCode !== 429) {
+        apiErrors++;
+      }
+    }
 
     // If we hit a rate limit, wait it out and keep going (up to MAX_RATE_LIMIT_WAITS times)
     const rateLimitedResult = results.find(r =>
@@ -669,7 +703,12 @@ export async function fillMissingShipping(listings) {
     }
   }
 
-  console.log(`[eBay API] Fetched shipping for ${shippingMap.size}/${needsShipping.length} items via API`);
+  const fetched = shippingMap.size;
+  const missed = needsShipping.length - fetched;
+  console.log(
+    `[eBay API] Shipping fetch: ${fetched}/${needsShipping.length} resolved` +
+    (missed > 0 ? ` (${apiErrors} API errors, ${noShippingInResponse} no data in response, ${calculatedShipping} calculated, ${nullResponses} null responses)` : '')
+  );
 
   // Apply fetched shipping
   let result = listings.map(l => {
