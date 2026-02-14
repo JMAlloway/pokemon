@@ -451,7 +451,12 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.warn(`[eBay Finding API] HTTP ${response.status}`);
+      let errorDetail = '';
+      try {
+        const errorBody = await response.text();
+        errorDetail = errorBody.substring(0, 500);
+      } catch {}
+      console.warn(`[eBay Finding API] HTTP ${response.status} for "${keywords}": ${errorDetail}`);
       return null;
     }
 
