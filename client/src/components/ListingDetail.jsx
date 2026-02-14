@@ -246,12 +246,18 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                     · {soldComps.filter(s => s.isOutlier).length} outlier{soldComps.filter(s => s.isOutlier).length > 1 ? 's' : ''} excluded
                   </span>
                 )}
+                {soldComps.some(s => s.source === 'eBay-active-estimate') && (
+                  <span className="font-normal normal-case tracking-normal ml-1 text-typo-amber">
+                    · estimates from active listings
+                  </span>
+                )}
               </h4>
               <div className="space-y-2">
                 {soldComps.map((sold, i) => {
                   const daysAgo = sold.daysOld || Math.floor((Date.now() - new Date(sold.soldAt).getTime()) / (1000 * 60 * 60 * 24));
-                  const recencyLabel = daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
-                  const recencyColor = daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
+                  const isEstimate = sold.source === 'eBay-active-estimate';
+                  const recencyLabel = isEstimate ? 'Est.' : daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
+                  const recencyColor = isEstimate ? 'text-typo-amber' : daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
                   const soldShipping = sold.shippingCost != null ? Number(sold.shippingCost) : null;
                   const soldTotal = soldShipping != null
                     ? Number(sold.soldPrice) + soldShipping
@@ -278,7 +284,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                         <span className="text-xs text-text-muted">
                           {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}
                         </span>
-                        {sold.ebayUrl && (
+                        {sold.ebayUrl && !isEstimate && (
                           <a
                             href={sold.ebayUrl}
                             target="_blank"
