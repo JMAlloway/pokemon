@@ -40,7 +40,7 @@ model SearchQuery {
 
 model EbayListing {
   id                  String        @id @default(uuid()) @db.Uuid
-  ebayListingId       String        @unique
+  ebayListingId       String
   searchQueryId       String        @db.Uuid
   cardName            String        @db.VarChar(255)
   listingTitle        String        @db.VarChar(500)
@@ -72,6 +72,7 @@ model EbayListing {
   searchQuery         SearchQuery   @relation(fields: [searchQueryId], references: [id], onDelete: Cascade)
   savedListing        SavedListing?
 
+  @@unique([searchQueryId, ebayListingId])
   @@index([searchQueryId])
   @@index([ebayListingId])
   @@index([listingStatus])
@@ -82,7 +83,8 @@ model EbayListing {
 model SavedListing {
   id                   String        @id @default(uuid()) @db.Uuid
   userId               String        @db.Uuid
-  ebayListingId        String        @unique
+  listingId            String        @unique @db.Uuid
+  ebayListingId        String
   priceAtSave          Decimal       @db.Decimal(10, 2)
   recentSoldPriceAtSave Decimal?     @db.Decimal(10, 2)
   dealScoreAtSave      Int?          @db.SmallInt
@@ -92,9 +94,10 @@ model SavedListing {
   status               ListingStatus @default(active)
   lastPriceCheckAt     DateTime?
   user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ebayListing          EbayListing   @relation(fields: [ebayListingId], references: [ebayListingId], onDelete: Cascade)
+  ebayListing          EbayListing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([ebayListingId])
   @@index([status])
 }
 

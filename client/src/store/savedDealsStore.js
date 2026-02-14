@@ -17,9 +17,9 @@ const useSavedDealsStore = create((set) => ({
     }
   },
 
-  saveDeal: async (ebayListingId) => {
+  saveDeal: async (ebayListingId, searchQueryId) => {
     try {
-      const data = await api.post('/api/saved-deals', { ebayListingId });
+      const data = await api.post('/api/saved-deals', { ebayListingId, searchQueryId });
       return data;
     } catch (error) {
       throw error;

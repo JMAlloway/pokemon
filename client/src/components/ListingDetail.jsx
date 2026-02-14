@@ -12,7 +12,8 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
   useEffect(() => {
     async function loadDetails() {
       try {
-        const data = await api.get(`/api/listings/${listing.ebayListingId}`);
+        const queryParam = listing.searchQueryId ? `?searchQueryId=${listing.searchQueryId}` : '';
+        const data = await api.get(`/api/listings/${listing.ebayListingId}${queryParam}`);
         if (data.recentSoldListings) setSoldComps(data.recentSoldListings);
         if (data.alsoFoundIn) setAlsoFoundIn(data.alsoFoundIn);
         if (data.scoreBreakdown) setScoreBreakdown(data.scoreBreakdown);
@@ -21,7 +22,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
       }
     }
     loadDetails();
-  }, [listing.ebayListingId]);
+  }, [listing.ebayListingId, listing.searchQueryId]);
 
   useEffect(() => {
     const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };

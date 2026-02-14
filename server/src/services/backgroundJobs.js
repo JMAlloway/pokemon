@@ -364,7 +364,12 @@ export async function executeSearch(searchQuery) {
     let storedCount = 0;
     for (const { listing, effectivePrice, priceGapPercent, dealScore } of topListings) {
       await prisma.ebayListing.upsert({
-        where: { ebayListingId: listing.ebayListingId },
+        where: {
+          searchQueryId_ebayListingId: {
+            searchQueryId: searchQuery.id,
+            ebayListingId: listing.ebayListingId
+          }
+        },
         create: {
           ebayListingId: listing.ebayListingId,
           searchQueryId: searchQuery.id,
@@ -428,26 +433,15 @@ export async function executeSearch(searchQuery) {
       .filter(id => !keptIds.has(id));
     if (toRemove.length > 0) {
       await prisma.ebayListing.deleteMany({
-        where: { ebayListingId: { in: toRemove } }
+        where: {
+          searchQueryId: searchQuery.id,
+          ebayListingId: { in: toRemove }
+        }
       });
       console.log(`[BackgroundJobs] Pruned ${toRemove.length} lower-scored listings for "${searchQuery.cardName}"`);
     }
 
-    // 7. Reconcile baseline: ensure ALL listings for this search query share the
-    //    same recentSoldPrice. Other search queries may have overwritten some
-    //    listings' baselines via the upsert update path (the update doesn't change
-    //    searchQueryId, so cross-search contamination can occur).
-    if (baseline.weightedPrice != null) {
-      await prisma.ebayListing.updateMany({
-        where: { searchQueryId: searchQuery.id },
-        data: {
-          recentSoldPrice: baseline.weightedPrice,
-          recencyScore: baseline.recencyScore
-        }
-      });
-    }
-
-    // 8. Update search query timestamp
+    // 7. Update search query timestamp
     await prisma.searchQuery.update({
       where: { id: searchQuery.id },
       data: { lastExecutedAt: new Date() }

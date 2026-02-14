@@ -17,7 +17,7 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
 
     setSaveStatus('saving');
     try {
-      await saveDeal(listing.ebayListingId);
+      await saveDeal(listing.ebayListingId, listing.searchQueryId);
       setSaveStatus('saved');
     } catch (error) {
       const status = error.status === 409 ? 'saved' : 'error';
