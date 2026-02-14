@@ -70,7 +70,7 @@ model EbayListing {
   lastCheckedAt       DateTime      @default(now())
   soldAt              DateTime?
   searchQuery         SearchQuery   @relation(fields: [searchQueryId], references: [id], onDelete: Cascade)
-  savedListings       SavedListing[]
+  savedListing        SavedListing?
 
   @@unique([searchQueryId, ebayListingId])
   @@index([searchQueryId])
@@ -98,6 +98,7 @@ model SavedListing {
 
   @@unique([userId, ebayListingId])
   @@index([userId])
+  @@index([ebayListingId])
   @@index([status])
   @@index([listingId])
 }
@@ -151,6 +152,10 @@ enum Rarity {
   uncommon
   rare
   holoRare
+  ultraRare
+  illustrationRare
+  specialIllustrationRare
+  megaIllustrationRare
   other
 }
 

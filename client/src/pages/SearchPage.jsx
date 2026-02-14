@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import SearchForm from '../components/SearchForm';
 import ListingCard from '../components/ListingCard';
+import SearchLoadingAnimation from '../components/SearchLoadingAnimation';
 import useSearchStore from '../store/searchStore';
 
 export default function SearchPage() {
@@ -32,8 +33,8 @@ export default function SearchPage() {
       const bEnd = b.auctionEndDate ? new Date(b.auctionEndDate).getTime() : Infinity;
       return aEnd - bEnd;
     }
-    // Default: dealScore (typos first, then by gap)
-    return (b.hasTypo ? 1000 : 0) + (Number(b.dealScore) || 0) - ((a.hasTypo ? 1000 : 0) + (Number(a.dealScore) || 0));
+    // Default: dealScore descending
+    return (Number(b.dealScore) || 0) - (Number(a.dealScore) || 0);
   });
 
   const typoCount = listings.filter(l => l.hasTypo).length;
@@ -69,8 +70,11 @@ export default function SearchPage() {
         </div>
       )}
 
+      {/* Loading animation */}
+      {isSearching && <SearchLoadingAnimation />}
+
       {/* Results */}
-      {listings.length > 0 && (
+      {!isSearching && listings.length > 0 && (
         <div className="mt-6">
           {/* Stats bar */}
           <div className="flex items-center justify-between mb-4">

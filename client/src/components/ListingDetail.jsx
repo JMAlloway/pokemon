@@ -12,7 +12,8 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
   useEffect(() => {
     async function loadDetails() {
       try {
-        const data = await api.get(`/api/listings/${listing.ebayListingId}`);
+        const queryParam = listing.searchQueryId ? `?searchQueryId=${listing.searchQueryId}` : '';
+        const data = await api.get(`/api/listings/${listing.ebayListingId}${queryParam}`);
         if (data.recentSoldListings) setSoldComps(data.recentSoldListings);
         if (data.alsoFoundIn) setAlsoFoundIn(data.alsoFoundIn);
         if (data.scoreBreakdown) setScoreBreakdown(data.scoreBreakdown);
@@ -21,7 +22,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
       }
     }
     loadDetails();
-  }, [listing.ebayListingId]);
+  }, [listing.ebayListingId, listing.searchQueryId]);
 
   useEffect(() => {
     const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
@@ -252,7 +253,9 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   const recencyLabel = daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
                   const recencyColor = daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
                   const soldShipping = sold.shippingCost != null ? Number(sold.shippingCost) : null;
-                  const soldTotal = Number(sold.soldPrice) + (soldShipping || 0);
+                  const soldTotal = soldShipping != null
+                    ? Number(sold.soldPrice) + soldShipping
+                    : Number(sold.soldPrice);
 
                   return (
                     <div key={i} className={`flex items-center justify-between py-1.5 border-b border-border last:border-0 ${sold.isOutlier ? 'opacity-40' : ''}`}>

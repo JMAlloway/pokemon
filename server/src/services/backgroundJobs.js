@@ -4,6 +4,7 @@ import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShip
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
 
+const runningJobs = new Map();
 let isProcessing = false;
 
 // Pattern to extract card numbers like "130/094", "13/94", "013/094"
@@ -50,40 +51,73 @@ function filterByCardNumber(listings, searchCardName) {
   return filtered;
 }
 
-// Keywords in listing titles that indicate accessories/non-card items
-const NON_CARD_KEYWORDS = [
-  'magnetic case', 'card case', 'display case', 'one-touch', 'one touch',
-  'toploader', 'top loader', 'top-loader',
-  'card sleeve', 'penny sleeve', 'card protector',
-  'binder', 'portfolio',
-  'card holder', 'card stand', 'display stand',
-  'acrylic case', 'ultra pro', 'bcw',
-  'booster box', 'booster pack', 'elite trainer box', 'etb',
-  'code card', 'online code',
-  'custom token', 'damage counter', 'coin flip',
-  'playmat', 'play mat', 'deck box', 'deckbox',
-  'card slab', 'slab case',
-  'extended art case'
+/**
+ * Filter out non-card products that sellers list in the Pokemon cards category.
+ * Art cases, keychains, custom/proxy cards, stickers, etc. match card name searches
+ * but aren't the actual card — and their low price inflates deal scores.
+ */
+const NON_CARD_PATTERNS = [
+  // Cases & display
+  /\bart\s*case\b/i,
+  /\bartwork\s*case\b/i,
+  /\bdisplay\s*case\b/i,
+  /\bone[\s-]*touch\b/i,
+  /\btop\s*loader\b/i,
+  /\bcard\s*stand\b/i,
+  /\bframe[d]?\b/i,
+  // Accessories
+  /\bkeychain\b/i,
+  /\bkey\s*chain\b/i,
+  /\bkey\s*ring\b/i,
+  /\bpin\b(?!\s*collection)/i, // "pin" but not "pin collection" (which can be a card set)
+  /\bmagnet\b/i,
+  /\bsticker\b/i,
+  /\bpatch\b/i,
+  /\bbadge\b/i,
+  // Custom / fan-made / proxy
+  /\bcustom\b/i,
+  /\bproxy\b/i,
+  /\bfan\s*art\b/i,
+  /\bhand\s*draw/i,
+  /\bhand\s*made/i,
+  /\bhandmade\b/i,
+  /\bdiy\b/i,
+  /\borica\b/i,
+  /\bfan\s*made\b/i,
+  /\bplaytest\b/i,
+  // Other non-card products
+  /\bplush\b/i,
+  /\bfigur(?:e|ine)\b/i,
+  /\bsleeve[s]?\b/i,
+  /\bdeck\s*box\b/i,
+  /\bbinder\b/i,
+  /\bplaymat\b/i,
+  /\bplay\s*mat\b/i,
+  /\bcoin\b/i,
+  /\bdice\b/i,
+  /\bnotebook\b/i,
+  /\bposter\b/i,
+  /\bt[\s-]*shirt\b/i,
+  /\brug\b/i,
+  /\bphone\s*case\b/i,
+  /\bwallet\b/i,
+  // Repack / mystery / lot (not a specific card)
+  /\brepack\b/i,
+  /\bmystery\s*pack\b/i,
+  /\bmystery\s*box\b/i,
+  /\bsealed\s*pack\b/i,
 ];
 
-const NON_CARD_RE = new RegExp(
-  NON_CARD_KEYWORDS.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
-  'i'
-);
-
-/**
- * Filter out non-card items (cases, sleeves, holders, etc.) from search results.
- * eBay sellers sometimes list accessories in the Pokemon cards category.
- */
-function filterNonCardItems(listings) {
+function filterNonCardListings(listings) {
   const before = listings.length;
   const filtered = listings.filter(listing => {
     const title = listing.listingTitle || listing.title || '';
-    return !NON_CARD_RE.test(title);
+    return !NON_CARD_PATTERNS.some(pattern => pattern.test(title));
   });
 
-  if (filtered.length < before) {
-    console.log(`[BackgroundJobs] Non-card filter: removed ${before - filtered.length} accessory/non-card items`);
+  const removed = before - filtered.length;
+  if (removed > 0) {
+    console.log(`[BackgroundJobs] Non-card filter: removed ${removed}/${before} non-card items (cases, keychains, customs, etc.)`);
   }
 
   return filtered;
@@ -198,12 +232,12 @@ export async function executeSearch(searchQuery) {
     // 1b. Fill missing shipping costs via batch getItems call
     const listingsWithShipping = await fillMissingShipping(listings);
 
-    // 1c. Filter out non-card items (cases, sleeves, holders, etc.)
-    const cardOnlyListings = filterNonCardItems(listingsWithShipping);
-
-    // 1d. Filter by card number: if the user searched for a specific card number
+    // 1c. Filter by card number: if the user searched for a specific card number
     //     (e.g. "130/094"), drop listings that have a *different* card number in the title
-    const relevantListings = filterByCardNumber(cardOnlyListings, searchQuery.cardName);
+    const cardNumberFiltered = filterByCardNumber(listingsWithShipping, searchQuery.cardName);
+
+    // 1d. Filter out non-card products (art cases, keychains, customs, etc.)
+    const relevantListings = filterNonCardListings(cardNumberFiltered);
 
     // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
     let soldData = [];
@@ -216,22 +250,34 @@ export async function executeSearch(searchQuery) {
         take: 100
       });
       soldData = storedSold.map(s => ({
-        soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
+        soldPrice: Number(s.soldPrice),
+        shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
         soldAt: s.soldAt
       }));
     } catch (dbErr) {
       console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
     }
 
-    // If no sold data in DB, fetch from eBay sold/completed API
-    if (soldData.length === 0) {
+    // Fetch from eBay sold/completed API if no sold data in DB,
+    // or if less than half have shipping data (likely from before we parsed shippingType)
+    const shippingCoverage = soldData.length > 0
+      ? soldData.filter(s => s.shippingCost !== null).length / soldData.length
+      : 0;
+    if (soldData.length === 0 || shippingCoverage < 0.5) {
       try {
         const { searchSoldListings } = await import('./ebayApi.js');
         const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
         if (freshSold.length > 0) {
+          // Clear old comps with poor shipping data and replace with fresh ones
+          if (soldData.length > 0 && shippingCoverage < 0.5) {
+            await prisma.recentSoldListing.deleteMany({
+              where: { cardName: searchQuery.cardName }
+            });
+          }
           await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
           soldData = freshSold.map(s => ({
-            soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
+            soldPrice: Number(s.soldPrice),
+            shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
             soldAt: new Date(s.soldAt)
           }));
         }
@@ -277,22 +323,23 @@ export async function executeSearch(searchQuery) {
         .map(l => l.ebayListingId);
       if (staleIds.length > 0) {
         await prisma.ebayListing.deleteMany({
-          where: { searchQueryId: searchQuery.id, ebayListingId: { in: staleIds } }
+          where: { ebayListingId: { in: staleIds } }
         });
         console.log(`[BackgroundJobs] Removed ${staleIds.length} stale listings with wrong card numbers for "${searchQuery.cardName}"`);
       }
     }
 
-    // 6. Calculate deal scores and batch-upsert listings in a single transaction
-    const upsertOperations = analyzedListings.map(listing => {
+    // 6. Score all listings, then keep the top 50 BIN + top 50 Auction by deal score
+    const MAX_PER_TYPE = 50;
+
+    const scoredListings = analyzedListings.map(listing => {
       const effectivePrice = listing.buyingOption === 'AUCTION'
         ? (listing.currentBidPrice || listing.currentPrice)
         : listing.currentPrice;
       const shippingKnown = listing.shippingCost != null;
       const shipping = shippingKnown ? Number(listing.shippingCost) : 0;
-      const totalPrice = effectivePrice + shipping;
       const priceGapPercent = baseline.weightedPrice && shippingKnown
-        ? calculatePriceGap(baseline.weightedPrice, totalPrice)
+        ? calculatePriceGap(baseline.weightedPrice, effectivePrice + shipping)
         : null;
 
       const dealScore = calculateDealScore({
@@ -305,7 +352,29 @@ export async function executeSearch(searchQuery) {
         auctionEndDate: listing.auctionEndDate
       });
 
-      return prisma.ebayListing.upsert({
+      return { listing, effectivePrice, priceGapPercent, dealScore };
+    });
+
+    // Split by buying option, sort each by score, take top 50 of each
+    const binListings = scoredListings
+      .filter(s => (s.listing.buyingOption || 'FIXED_PRICE') === 'FIXED_PRICE')
+      .sort((a, b) => b.dealScore - a.dealScore)
+      .slice(0, MAX_PER_TYPE);
+    const auctionListings = scoredListings
+      .filter(s => s.listing.buyingOption === 'AUCTION')
+      .sort((a, b) => b.dealScore - a.dealScore)
+      .slice(0, MAX_PER_TYPE);
+    const topListings = [...binListings, ...auctionListings];
+
+    const totalScored = scoredListings.length;
+    if (totalScored > topListings.length) {
+      console.log(`[BackgroundJobs] Scored ${totalScored} listings, keeping top ${binListings.length} BIN + ${auctionListings.length} Auction by deal score`);
+    }
+
+    // Store only the top listings
+    let storedCount = 0;
+    for (const { listing, effectivePrice, priceGapPercent, dealScore } of topListings) {
+      await prisma.ebayListing.upsert({
         where: {
           searchQueryId_ebayListingId: {
             searchQueryId: searchQuery.id,
@@ -360,10 +429,28 @@ export async function executeSearch(searchQuery) {
           lastCheckedAt: new Date()
         }
       });
-    });
 
-    await prisma.$transaction(upsertOperations);
-    const storedCount = upsertOperations.length;
+      storedCount++;
+    }
+
+    // Remove listings that fell out of the top results
+    const keptIds = new Set(topListings.map(t => t.listing.ebayListingId));
+    const existingForQuery = await prisma.ebayListing.findMany({
+      where: { searchQueryId: searchQuery.id },
+      select: { ebayListingId: true }
+    });
+    const toRemove = existingForQuery
+      .map(l => l.ebayListingId)
+      .filter(id => !keptIds.has(id));
+    if (toRemove.length > 0) {
+      await prisma.ebayListing.deleteMany({
+        where: {
+          searchQueryId: searchQuery.id,
+          ebayListingId: { in: toRemove }
+        }
+      });
+      console.log(`[BackgroundJobs] Pruned ${toRemove.length} lower-scored listings for "${searchQuery.cardName}"`);
+    }
 
     // 7. Update search query timestamp
     await prisma.searchQuery.update({

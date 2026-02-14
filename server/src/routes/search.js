@@ -6,6 +6,7 @@ import { executeSearch } from '../services/backgroundJobs.js';
 import { validateCardName, getAutocompleteSuggestions, getSetSuggestions } from '../services/pokemonTcg.js';
 import { getRateLimitStatus } from '../services/ebayApi.js';
 import { flagPriceOutliers } from '../services/dealScoring.js';
+import CARD_CATALOG, { RARITY_LABELS, RARITY_ORDER } from '../data/cardCatalog.js';
 
 const router = Router();
 
@@ -35,6 +36,15 @@ router.post('/', validateSearchQuery, async (req, res) => {
       });
     }
 
+    // Prisma only accepts enum values it was generated with.
+    // If the generated client is stale, skip persisting the rarity
+    // rather than crashing the search.
+    const PRISMA_RARITY_VALUES = [
+      'common', 'uncommon', 'rare', 'holoRare', 'ultraRare',
+      'illustrationRare', 'specialIllustrationRare', 'megaIllustrationRare', 'other'
+    ];
+    const persistableRarity = rarity && PRISMA_RARITY_VALUES.includes(rarity) ? rarity : null;
+
     // Create or find a temporary search query for this manual search
     let searchQuery = await prisma.searchQuery.findFirst({
       where: {
@@ -46,16 +56,34 @@ router.post('/', validateSearchQuery, async (req, res) => {
     });
 
     if (!searchQuery) {
-      searchQuery = await prisma.searchQuery.create({
-        data: {
-          userId: req.userId,
-          cardName: validation.name || cardName,
-          set: set || null,
-          rarity: rarity || null,
-          condition: condition || null,
-          searchFrequency: 'manual'
+      try {
+        searchQuery = await prisma.searchQuery.create({
+          data: {
+            userId: req.userId,
+            cardName: validation.name || cardName,
+            set: set || null,
+            rarity: persistableRarity,
+            condition: condition || null,
+            searchFrequency: 'manual'
+          }
+        });
+      } catch (createErr) {
+        // If rarity enum is rejected (stale Prisma client), retry without it
+        if (createErr.message?.includes('Invalid value for argument `rarity`')) {
+          searchQuery = await prisma.searchQuery.create({
+            data: {
+              userId: req.userId,
+              cardName: validation.name || cardName,
+              set: set || null,
+              rarity: null,
+              condition: condition || null,
+              searchFrequency: 'manual'
+            }
+          });
+        } else {
+          throw createErr;
         }
-      });
+      }
     }
 
     // Attach runtime filters (not persisted to SearchQuery model)
@@ -104,10 +132,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
     // Fetch the stored results
     const listings = await prisma.ebayListing.findMany({
       where: { searchQueryId: searchQuery.id, listingStatus: 'active' },
-      orderBy: [
-        { hasTypo: 'desc' },
-        { dealScore: 'desc' }
-      ]
+      orderBy: { dealScore: 'desc' }
     });
 
     // Get recent sold comps for the card
@@ -174,6 +199,11 @@ router.get('/validate', async (req, res) => {
   }
   const result = await validateCardName(cardName);
   res.json(result);
+});
+
+// GET /api/search/catalog — Return set/card catalog for the picker UI
+router.get('/catalog', (req, res) => {
+  res.json({ sets: CARD_CATALOG, rarityLabels: RARITY_LABELS, rarityOrder: RARITY_ORDER });
 });
 
 // GET /api/search/rate-limit

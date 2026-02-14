@@ -8,20 +8,33 @@ const router = Router();
 router.get('/:ebayListingId', async (req, res) => {
   try {
     const { ebayListingId } = req.params;
+    const { searchQueryId } = req.query;
 
-    const listing = await prisma.ebayListing.findFirst({
-      where: { ebayListingId },
-      orderBy: { lastCheckedAt: 'desc' },
-      include: {
-        searchQuery: {
-          select: { id: true, cardName: true, set: true, rarity: true, condition: true }
-        },
-        savedListings: {
-          where: { userId: req.userId },
-          select: { id: true, savedAt: true, priceAtSave: true, priceChangePercent: true }
-        }
-      }
-    });
+    // With per-search snapshots, the same eBay listing can appear in multiple
+    // search queries. Use searchQueryId to target a specific snapshot, or fall
+    // back to the first match (highest deal score).
+    const listing = searchQueryId
+      ? await prisma.ebayListing.findUnique({
+          where: {
+            searchQueryId_ebayListingId: { searchQueryId, ebayListingId }
+          },
+          include: {
+            searchQuery: {
+              select: { id: true, cardName: true, set: true, rarity: true, condition: true }
+            },
+            savedListing: true
+          }
+        })
+      : await prisma.ebayListing.findFirst({
+          where: { ebayListingId },
+          orderBy: { dealScore: 'desc' },
+          include: {
+            searchQuery: {
+              select: { id: true, cardName: true, set: true, rarity: true, condition: true }
+            },
+            savedListing: true
+          }
+        });
 
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
@@ -34,7 +47,7 @@ router.get('/:ebayListingId', async (req, res) => {
       take: 20
     });
 
-    // Check if listing appears in other searches
+    // Check if listing appears in other searches (per-search snapshots make this work)
     const otherSearches = await prisma.ebayListing.findMany({
       where: {
         ebayListingId,
@@ -57,12 +70,14 @@ router.get('/:ebayListingId', async (req, res) => {
       shippingCost: listing.shippingCost != null ? Number(listing.shippingCost) : null
     });
 
+    const userSaved = listing.savedListing?.userId === req.userId ? listing.savedListing : null;
+
     res.json({
       listing: {
         ...listing,
-        isSaved: listing.savedListings?.length > 0,
-        savedListingId: listing.savedListings?.[0]?.id || null,
-        savedListings: undefined
+        isSaved: userSaved !== null,
+        savedListingId: userSaved?.id || null,
+        savedListing: undefined
       },
       scoreBreakdown,
       recentSoldListings: flagPriceOutliers(recentSold),

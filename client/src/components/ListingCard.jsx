@@ -17,13 +17,14 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
 
     setSaveStatus('saving');
     try {
-      await saveDeal(listing.ebayListingId);
+      await saveDeal(listing.ebayListingId, listing.searchQueryId);
       setSaveStatus('saved');
     } catch (error) {
-      setSaveStatus(error.status === 409 ? 'saved' : 'error');
-      setTimeout(() => {
-        if (saveStatus === 'error') setSaveStatus('idle');
-      }, 2000);
+      const status = error.status === 409 ? 'saved' : 'error';
+      setSaveStatus(status);
+      if (status === 'error') {
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      }
     }
   };
 
