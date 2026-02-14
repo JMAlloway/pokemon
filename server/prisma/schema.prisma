@@ -115,7 +115,7 @@ model RecentSoldListing {
   daysOld       Int?     @db.SmallInt
   source        String   @default("eBay") @db.VarChar(50)
   ebayItemId    String?  @db.VarChar(100)
-  ebayUrl       String?  @db.VarChar(500)
+  ebayUrl       String?  @db.Text
   lastUpdatedAt DateTime @default(now())
 
   @@index([cardName])
