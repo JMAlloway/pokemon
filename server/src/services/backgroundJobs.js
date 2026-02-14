@@ -4,7 +4,6 @@ import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShip
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
 
-const runningJobs = new Map();
 let isProcessing = false;
 
 // Pattern to extract card numbers like "130/094", "13/94", "013/094"
@@ -236,22 +235,20 @@ export async function executeSearch(searchQuery) {
         .map(l => l.ebayListingId);
       if (staleIds.length > 0) {
         await prisma.ebayListing.deleteMany({
-          where: { ebayListingId: { in: staleIds } }
+          where: { searchQueryId: searchQuery.id, ebayListingId: { in: staleIds } }
         });
         console.log(`[BackgroundJobs] Removed ${staleIds.length} stale listings with wrong card numbers for "${searchQuery.cardName}"`);
       }
     }
 
-    // 6. Calculate deal scores and store listings
-    let storedCount = 0;
-    for (const listing of analyzedListings) {
+    // 6. Calculate deal scores and batch-upsert listings in a single transaction
+    const upsertOperations = analyzedListings.map(listing => {
       const effectivePrice = listing.buyingOption === 'AUCTION'
         ? (listing.currentBidPrice || listing.currentPrice)
         : listing.currentPrice;
       const shippingKnown = listing.shippingCost != null;
       const shipping = shippingKnown ? Number(listing.shippingCost) : 0;
       const totalPrice = effectivePrice + shipping;
-      // Calculate price gap if we know or estimated shipping
       const priceGapPercent = baseline.weightedPrice && shippingKnown
         ? calculatePriceGap(baseline.weightedPrice, totalPrice)
         : null;
@@ -266,9 +263,13 @@ export async function executeSearch(searchQuery) {
         auctionEndDate: listing.auctionEndDate
       });
 
-      // Upsert listing
-      await prisma.ebayListing.upsert({
-        where: { ebayListingId: listing.ebayListingId },
+      return prisma.ebayListing.upsert({
+        where: {
+          searchQueryId_ebayListingId: {
+            searchQueryId: searchQuery.id,
+            ebayListingId: listing.ebayListingId
+          }
+        },
         create: {
           ebayListingId: listing.ebayListingId,
           searchQueryId: searchQuery.id,
@@ -317,25 +318,12 @@ export async function executeSearch(searchQuery) {
           lastCheckedAt: new Date()
         }
       });
+    });
 
-      storedCount++;
-    }
+    await prisma.$transaction(upsertOperations);
+    const storedCount = upsertOperations.length;
 
-    // 7. Reconcile baseline: ensure ALL listings for this search query share the
-    //    same recentSoldPrice. Other search queries may have overwritten some
-    //    listings' baselines via the upsert update path (the update doesn't change
-    //    searchQueryId, so cross-search contamination can occur).
-    if (baseline.weightedPrice != null) {
-      await prisma.ebayListing.updateMany({
-        where: { searchQueryId: searchQuery.id },
-        data: {
-          recentSoldPrice: baseline.weightedPrice,
-          recencyScore: baseline.recencyScore
-        }
-      });
-    }
-
-    // 8. Update search query timestamp
+    // 7. Update search query timestamp
     await prisma.searchQuery.update({
       where: { id: searchQuery.id },
       data: { lastExecutedAt: new Date() }

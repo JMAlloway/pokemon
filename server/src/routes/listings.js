@@ -9,13 +9,14 @@ router.get('/:ebayListingId', async (req, res) => {
   try {
     const { ebayListingId } = req.params;
 
-    const listing = await prisma.ebayListing.findUnique({
+    const listing = await prisma.ebayListing.findFirst({
       where: { ebayListingId },
+      orderBy: { lastCheckedAt: 'desc' },
       include: {
         searchQuery: {
           select: { id: true, cardName: true, set: true, rarity: true, condition: true }
         },
-        savedListing: {
+        savedListings: {
           where: { userId: req.userId },
           select: { id: true, savedAt: true, priceAtSave: true, priceChangePercent: true }
         }
@@ -59,9 +60,9 @@ router.get('/:ebayListingId', async (req, res) => {
     res.json({
       listing: {
         ...listing,
-        isSaved: listing.savedListing !== null,
-        savedListingId: listing.savedListing?.id || null,
-        savedListing: undefined
+        isSaved: listing.savedListings?.length > 0,
+        savedListingId: listing.savedListings?.[0]?.id || null,
+        savedListings: undefined
       },
       scoreBreakdown,
       recentSoldListings: flagPriceOutliers(recentSold),

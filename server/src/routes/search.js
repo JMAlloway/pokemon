@@ -120,9 +120,6 @@ router.post('/', validateSearchQuery, async (req, res) => {
     console.log(`[Search] Returning ${listings.length} listings for "${req.body.cardName}" (${Date.now() - startTime}ms)`);
 
     // Normalize: ensure all listings show the same market baseline for this search.
-    // The per-listing recentSoldPrice can get out of sync when the same eBay listing
-    // appears in multiple search queries (the upsert overwrites the baseline but not
-    // the searchQueryId). Override with the authoritative per-search baseline.
     const normalizedListings = result.baseline != null
       ? listings.map(l => {
           const price = l.buyingOption === 'AUCTION'

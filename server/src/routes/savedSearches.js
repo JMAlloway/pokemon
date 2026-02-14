@@ -264,7 +264,7 @@ router.get('/:id/listings', async (req, res) => {
         ? [{ hasTypo: 'desc' }, { dealScore: 'desc' }]
         : [orderBy],
       include: {
-        savedListing: {
+        savedListings: {
           where: { userId: req.userId },
           select: { id: true, savedAt: true }
         }
@@ -281,9 +281,9 @@ router.get('/:id/listings', async (req, res) => {
     res.json({
       listings: listings.map(l => ({
         ...l,
-        isSaved: l.savedListing !== null,
-        savedListingId: l.savedListing?.id || null,
-        savedListing: undefined
+        isSaved: l.savedListings?.length > 0,
+        savedListingId: l.savedListings?.[0]?.id || null,
+        savedListings: undefined
       })),
       recentSoldListings: flagPriceOutliers(soldListings),
       searchQuery: search

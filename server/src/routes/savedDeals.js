@@ -101,9 +101,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'eBay listing ID required' });
     }
 
-    // Find the listing
-    const listing = await prisma.ebayListing.findUnique({
-      where: { ebayListingId }
+    // Find the listing (ebayListingId is no longer unique — pick the most recently checked)
+    const listing = await prisma.ebayListing.findFirst({
+      where: { ebayListingId },
+      orderBy: { lastCheckedAt: 'desc' }
     });
 
     if (!listing) {
@@ -114,9 +115,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'This listing is no longer available' });
     }
 
-    // Check for existing saved deal
+    // Check for existing saved deal (compound unique: userId + ebayListingId)
     const existing = await prisma.savedListing.findUnique({
-      where: { ebayListingId }
+      where: { userId_ebayListingId: { userId: req.userId, ebayListingId } }
     });
 
     if (existing) {
@@ -126,6 +127,7 @@ router.post('/', async (req, res) => {
     const savedDeal = await prisma.savedListing.create({
       data: {
         userId: req.userId,
+        listingId: listing.id,
         ebayListingId: listing.ebayListingId,
         priceAtSave: listing.currentPrice,
         recentSoldPriceAtSave: listing.recentSoldPrice,
