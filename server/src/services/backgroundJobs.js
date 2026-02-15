@@ -3,6 +3,7 @@ import prisma from '../db.js';
 import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShipping } from './ebayApi.js';
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
+import { fetchTcgPlayerPrice } from './pokemonTcg.js';
 
 const runningJobs = new Map();
 let isProcessing = false;
@@ -239,59 +240,86 @@ export async function executeSearch(searchQuery) {
     // 1d. Filter out non-card products (art cases, keychains, customs, etc.)
     const relevantListings = filterNonCardListings(cardNumberFiltered);
 
-    // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
-    let soldData = [];
+    // 2. Get market baseline — try TCGPlayer first (most accurate), fall back to eBay sold comps
+    let baseline;
+    let baselineSource = 'ebay';
 
-    // Check DB for previously stored sold listings
+    // 2a. Try TCGPlayer market price via pokemontcg.io API
     try {
-      const storedSold = await prisma.recentSoldListing.findMany({
-        where: { cardName: searchQuery.cardName },
-        orderBy: { soldAt: 'desc' },
-        take: 100
+      const tcgPrice = await fetchTcgPlayerPrice({
+        cardName: searchQuery.cardName,
+        set: searchQuery.set,
+        rarity: searchQuery.rarity
       });
-      soldData = storedSold.map(s => ({
-        soldPrice: Number(s.soldPrice),
-        shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
-        soldAt: s.soldAt,
-        ebayUrl: s.ebayUrl || null
-      }));
-    } catch (dbErr) {
-      console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
-    }
-
-    // Fetch from eBay sold/completed API if no sold data in DB,
-    // or if less than half have shipping data, or if most comps are missing eBay URLs
-    const shippingCoverage = soldData.length > 0
-      ? soldData.filter(s => s.shippingCost !== null).length / soldData.length
-      : 0;
-    const urlCoverage = soldData.length > 0
-      ? soldData.filter(s => s.ebayUrl).length / soldData.length
-      : 0;
-    if (soldData.length === 0 || shippingCoverage < 0.5 || urlCoverage < 0.5) {
-      try {
-        const { searchSoldListings } = await import('./ebayApi.js');
-        const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
-        if (freshSold.length > 0) {
-          // Clear old comps with poor shipping/URL data and replace with fresh ones
-          if (soldData.length > 0 && (shippingCoverage < 0.5 || urlCoverage < 0.5)) {
-            await prisma.recentSoldListing.deleteMany({
-              where: { cardName: searchQuery.cardName }
-            });
-          }
-          await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
-          soldData = freshSold.map(s => ({
-            soldPrice: Number(s.soldPrice),
-            shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
-            soldAt: new Date(s.soldAt)
-          }));
-        }
-      } catch (soldErr) {
-        console.warn(`[BackgroundJobs] Could not fetch sold listings:`, soldErr.message);
+      if (tcgPrice?.market) {
+        baseline = {
+          weightedPrice: tcgPrice.market,
+          recencyScore: 95, // TCGPlayer data is highly reliable
+          sampleSize: null  // TCGPlayer doesn't expose sample size
+        };
+        baselineSource = 'tcgplayer';
+        console.log(`[BackgroundJobs] Using TCGPlayer market price: $${tcgPrice.market} (${tcgPrice.variant}, updated ${tcgPrice.updatedAt})`);
       }
+    } catch (tcgErr) {
+      console.warn(`[BackgroundJobs] TCGPlayer price fetch failed:`, tcgErr.message);
     }
 
-    // 3. Calculate recency-weighted baseline from actual sold data
-    const baseline = calculateRecencyWeightedBaseline(soldData);
+    // 2b. Fall back to eBay sold comps if TCGPlayer unavailable
+    if (!baseline) {
+      let soldData = [];
+
+      // Check DB for previously stored sold listings
+      try {
+        const storedSold = await prisma.recentSoldListing.findMany({
+          where: { cardName: searchQuery.cardName },
+          orderBy: { soldAt: 'desc' },
+          take: 100
+        });
+        soldData = storedSold.map(s => ({
+          soldPrice: Number(s.soldPrice),
+          shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
+          soldAt: s.soldAt,
+          ebayUrl: s.ebayUrl || null
+        }));
+      } catch (dbErr) {
+        console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
+      }
+
+      // Fetch from eBay sold/completed API if no sold data in DB,
+      // or if less than half have shipping data, or if most comps are missing eBay URLs
+      const shippingCoverage = soldData.length > 0
+        ? soldData.filter(s => s.shippingCost !== null).length / soldData.length
+        : 0;
+      const urlCoverage = soldData.length > 0
+        ? soldData.filter(s => s.ebayUrl).length / soldData.length
+        : 0;
+      if (soldData.length === 0 || shippingCoverage < 0.5 || urlCoverage < 0.5) {
+        try {
+          const { searchSoldListings } = await import('./ebayApi.js');
+          const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
+          if (freshSold.length > 0) {
+            // Clear old comps with poor shipping/URL data and replace with fresh ones
+            if (soldData.length > 0 && (shippingCoverage < 0.5 || urlCoverage < 0.5)) {
+              await prisma.recentSoldListing.deleteMany({
+                where: { cardName: searchQuery.cardName }
+              });
+            }
+            await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
+            soldData = freshSold.map(s => ({
+              soldPrice: Number(s.soldPrice),
+              shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
+              soldAt: new Date(s.soldAt)
+            }));
+          }
+        } catch (soldErr) {
+          console.warn(`[BackgroundJobs] Could not fetch sold listings:`, soldErr.message);
+        }
+      }
+
+      // 3. Calculate recency-weighted baseline from actual sold data
+      baseline = calculateRecencyWeightedBaseline(soldData);
+      console.log(`[BackgroundJobs] Using eBay sold comps baseline: $${baseline.weightedPrice} (${baseline.sampleSize} comps)`);
+    }
 
     // 4. Analyze listings for typos
     const analyzedListings = batchAnalyzeTitles(relevantListings, searchQuery.cardName);
@@ -482,14 +510,15 @@ export async function executeSearch(searchQuery) {
       await captureMarketSnapshot(searchQuery.cardName, searchQuery.set, baseline);
     }
 
-    console.log(`[BackgroundJobs] Search complete for "${searchQuery.cardName}": ${storedCount} listings stored, baseline=$${baseline.weightedPrice}`);
+    console.log(`[BackgroundJobs] Search complete for "${searchQuery.cardName}": ${storedCount} listings stored, baseline=$${baseline.weightedPrice} (${baselineSource})`);
 
     return {
       success: true,
       listingsFound: storedCount,
       baseline: baseline.weightedPrice,
       recencyScore: baseline.recencyScore,
-      sampleSize: baseline.sampleSize
+      sampleSize: baseline.sampleSize,
+      baselineSource
     };
   } catch (error) {
     console.error(`[BackgroundJobs] Search failed for "${searchQuery.cardName}":`, error.message, error.stack);

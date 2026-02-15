@@ -4,7 +4,7 @@ import TypoBadge from './TypoBadge';
 import SellerInfo from './SellerInfo';
 import { api } from '../utils/api';
 
-export default function ListingDetail({ listing, recentSoldListings: initialSold, onClose, onSave, saveStatus }) {
+export default function ListingDetail({ listing, recentSoldListings: initialSold, baselineSource, onClose, onSave, saveStatus }) {
   const [soldComps, setSoldComps] = useState(initialSold || []);
   const [alsoFoundIn, setAlsoFoundIn] = useState([]);
   const [scoreBreakdown, setScoreBreakdown] = useState(null);
@@ -156,7 +156,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-text-muted">Market Avg</p>
+                  <p className="text-xs text-text-muted">{baselineSource === 'tcgplayer' ? 'TCGPlayer' : 'Market Avg'}</p>
                   <p className="text-lg font-bold text-text-secondary">
                     {listing.recentSoldPrice ? `$${Number(listing.recentSoldPrice).toFixed(2)}` : 'N/A'}
                   </p>
@@ -202,7 +202,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   {listing.recentSoldPrice && !isAuction && (
                     <div>
                       <span className="text-lg text-text-secondary">${Number(listing.recentSoldPrice).toFixed(2)}</span>
-                      <span className="text-sm text-text-muted ml-1">market avg</span>
+                      <span className="text-sm text-text-muted ml-1">{baselineSource === 'tcgplayer' ? 'TCGPlayer' : 'market avg'}</span>
                     </div>
                   )}
                 </div>

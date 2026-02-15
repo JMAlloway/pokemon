@@ -190,4 +190,140 @@ export function getSetSuggestions(partial) {
   return POKEMON_SETS.filter(s => s.toLowerCase().includes(normalized)).slice(0, 10);
 }
 
+/**
+ * Fetch TCGPlayer market price via the pokemontcg.io API.
+ *
+ * The pokemontcg.io card response includes a `tcgplayer.prices` object keyed by
+ * variant (e.g. "holofoil", "normal", "reverseHolofoil"). Each variant has:
+ *   { low, mid, high, market, directLow }
+ *
+ * We pick the best variant based on rarity and return the `market` price,
+ * which is the official TCGPlayer Market Price.
+ *
+ * @param {{ cardName: string, set?: string, cardNumber?: string, rarity?: string }} opts
+ * @returns {Promise<{ market: number, low: number, mid: number, high: number, updatedAt: string, variant: string } | null>}
+ */
+export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity }) {
+  // Build cache key
+  const cacheKey = `tcgprice_${cardName}_${set || ''}_${cardNumber || ''}`;
+  const cached = pokemonTcgCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Strip card number from card name for the API query
+  // e.g. "Mega Charizard X ex 130/094" → "Mega Charizard X ex"
+  const baseName = cardName.replace(/\s*\d{1,3}\s*\/\s*\d{2,3}\s*$/, '').trim();
+
+  // Extract just the card number (e.g. "130" from "130/094")
+  const numberMatch = (cardNumber || cardName).match(/(\d{1,3})\s*\/\s*\d{2,3}/);
+  const number = numberMatch ? numberMatch[1].replace(/^0+/, '') : null;
+
+  // Build query parts
+  const queryParts = [];
+  queryParts.push(`name:"${baseName}"`);
+  if (set) queryParts.push(`set.name:"${set}"`);
+  if (number) queryParts.push(`number:"${number}"`);
+
+  const query = queryParts.join(' ');
+  const url = `${POKEMON_TCG_API_BASE}/cards?q=${encodeURIComponent(query)}&pageSize=5&select=name,number,set,tcgplayer,rarity`;
+
+  try {
+    console.log(`[TCGPlayer] Fetching price: ${query}`);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+    if (!response.ok) {
+      console.warn(`[TCGPlayer] API returned ${response.status}`);
+      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+      return null;
+    }
+
+    const data = await response.json();
+    if (!data.data || data.data.length === 0) {
+      console.log(`[TCGPlayer] No card found for: ${query}`);
+      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+      return null;
+    }
+
+    // Pick the best matching card (prefer exact number match)
+    let card = data.data[0];
+    if (number) {
+      const exactMatch = data.data.find(c => String(c.number) === number);
+      if (exactMatch) card = exactMatch;
+    }
+
+    if (!card.tcgplayer?.prices) {
+      console.log(`[TCGPlayer] No pricing data for ${card.name} (${card.set?.name})`);
+      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+      return null;
+    }
+
+    // Pick the best price variant based on rarity
+    const variant = pickPriceVariant(card.tcgplayer.prices, rarity);
+    if (!variant) {
+      console.log(`[TCGPlayer] No usable price variant for ${card.name}`);
+      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+      return null;
+    }
+
+    const prices = card.tcgplayer.prices[variant];
+    if (!prices.market && !prices.mid) {
+      console.log(`[TCGPlayer] No market/mid price for ${card.name} (${variant})`);
+      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+      return null;
+    }
+
+    const result = {
+      market: prices.market || prices.mid,
+      low: prices.low || null,
+      mid: prices.mid || null,
+      high: prices.high || null,
+      directLow: prices.directLow || null,
+      updatedAt: card.tcgplayer.updatedAt || null,
+      variant,
+      cardName: card.name,
+      setName: card.set?.name || set
+    };
+
+    console.log(`[TCGPlayer] ${card.name} (${card.set?.name}) ${variant}: market=$${result.market}`);
+    pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
+  } catch (err) {
+    console.warn(`[TCGPlayer] Price fetch failed:`, err.message);
+    pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+    return null;
+  }
+}
+
+/**
+ * Pick the most appropriate TCGPlayer price variant for a card.
+ * Variants include: holofoil, normal, reverseHolofoil, 1stEditionHolofoil, etc.
+ */
+function pickPriceVariant(prices, rarity) {
+  const variants = Object.keys(prices);
+  if (variants.length === 0) return null;
+  if (variants.length === 1) return variants[0];
+
+  // For high-rarity cards, prefer holofoil
+  const highRarities = ['ultraRare', 'illustrationRare', 'specialIllustrationRare', 'megaIllustrationRare'];
+  if (rarity && highRarities.includes(rarity)) {
+    if (prices.holofoil) return 'holofoil';
+  }
+
+  // For common/uncommon, prefer normal
+  if (rarity === 'common' || rarity === 'uncommon') {
+    if (prices.normal) return 'normal';
+    if (prices.reverseHolofoil) return 'reverseHolofoil';
+  }
+
+  // General preference order
+  const preferenceOrder = ['holofoil', 'normal', 'reverseHolofoil', '1stEditionHolofoil', 'unlimitedHolofoil'];
+  for (const v of preferenceOrder) {
+    if (prices[v]?.market || prices[v]?.mid) return v;
+  }
+
+  // Fallback: first variant with a market price
+  return variants.find(v => prices[v]?.market || prices[v]?.mid) || variants[0];
+}
+
 export { POKEMON_SETS, CARD_TYPES, KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS, ALL_KNOWN_CARDS };

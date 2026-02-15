@@ -165,6 +165,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
       baseline: result.baseline,
       recencyScore: result.recencyScore,
       sampleSize: result.sampleSize,
+      baselineSource: result.baselineSource || 'ebay',
       searchQueryId: searchQuery.id,
       cached: false
     });

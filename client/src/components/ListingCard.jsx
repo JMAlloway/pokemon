@@ -6,7 +6,7 @@ import SellerInfo from './SellerInfo';
 import ListingDetail from './ListingDetail';
 import useSavedDealsStore from '../store/savedDealsStore';
 
-export default function ListingCard({ listing, recentSoldListings = [], showSaveButton = true }) {
+export default function ListingCard({ listing, recentSoldListings = [], showSaveButton = true, baselineSource }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [saveStatus, setSaveStatus] = useState(listing.isSaved ? 'saved' : 'idle');
   const { saveDeal } = useSavedDealsStore();
@@ -130,6 +130,7 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
                 shippingEstimated={listing.shippingEstimated}
                 baseline={listing.recentSoldPrice}
                 gapPercent={listing.priceGapPercent}
+                baselineSource={baselineSource}
               />
             </div>
 
@@ -203,6 +204,7 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
         <ListingDetail
           listing={listing}
           recentSoldListings={recentSoldListings}
+          baselineSource={baselineSource}
           onClose={() => setIsExpanded(false)}
           onSave={handleSave}
           saveStatus={saveStatus}

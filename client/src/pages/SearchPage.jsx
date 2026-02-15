@@ -5,7 +5,7 @@ import SearchLoadingAnimation from '../components/SearchLoadingAnimation';
 import useSearchStore from '../store/searchStore';
 
 export default function SearchPage() {
-  const { listings, recentSoldListings, isSearching, error, cached, cacheTimestamp, baseline, recencyScore, sampleSize, search, clearResults } = useSearchStore();
+  const { listings, recentSoldListings, isSearching, error, cached, cacheTimestamp, baseline, baselineSource, recencyScore, sampleSize, search, clearResults } = useSearchStore();
   const [sortBy, setSortBy] = useState('dealScore');
   const [filterType, setFilterType] = useState('all'); // 'all', 'bin', 'auction'
 
@@ -120,7 +120,7 @@ export default function SearchPage() {
               )}
               {baseline && (
                 <span className="text-sm text-text-muted">
-                  Market avg (w/ ship): ${Number(baseline).toFixed(2)}
+                  {baselineSource === 'tcgplayer' ? 'TCGPlayer market' : 'Market avg (w/ ship)'}: ${Number(baseline).toFixed(2)}
                 </span>
               )}
               {sampleSize !== null && sampleSize !== undefined && sampleSize <= 2 && sampleSize > 0 && (
@@ -158,7 +158,7 @@ export default function SearchPage() {
           {/* Listing grid */}
           <div className="space-y-2">
             {sortedListings.map(listing => (
-              <ListingCard key={listing.id} listing={listing} recentSoldListings={recentSoldListings} />
+              <ListingCard key={listing.id} listing={listing} recentSoldListings={recentSoldListings} baselineSource={baselineSource} />
             ))}
           </div>
         </div>
