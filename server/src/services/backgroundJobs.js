@@ -766,7 +766,7 @@ async function captureMarketSnapshot(cardName, set, baseline) {
         cardName,
         set: set || null,
         baselinePrice: baseline.weightedPrice,
-        sampleSize: baseline.sampleSize,
+        sampleSize: baseline.sampleSize ?? 0,
         recencyScore: baseline.recencyScore,
         source: 'search'
       }
