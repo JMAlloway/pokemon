@@ -444,13 +444,18 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
+  const requestUrl = `${baseUrl}?${params.toString()}`;
+  console.log(`[eBay Finding API] GET ${isProduction ? 'production' : 'sandbox'}: keywords="${keywords}", days=${days}`);
+
   try {
     recordRequest();
-    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+    const response = await fetch(requestUrl, {
       signal: controller.signal,
       headers: { 'X-EBAY-SOA-GLOBAL-ID': 'EBAY-US' }
     });
     clearTimeout(timeoutId);
+
+    console.log(`[eBay Finding API] Response: HTTP ${response.status}`);
 
     if (!response.ok) {
       let errorDetail = '';
@@ -543,12 +548,16 @@ const ACTIVE_TO_SOLD_DISCOUNT = 0.85;
 export async function searchSoldListings({ cardName, set, graded, language, days = 90 }) {
   // 1. Try Finding API for real sold comps (most accurate)
   try {
+    console.log(`[eBay Finding API] Attempting real sold lookup for "${cardName}"${set ? ` (${set})` : ''}`);
     const realSold = await searchCompletedSoldItems({ cardName, set, days });
     if (realSold && realSold.length >= 3) {
+      console.log(`[eBay Finding API] Success: ${realSold.length} real sold comps, median $${realSold.map(s => s.soldPrice).sort((a,b) => a-b)[Math.floor(realSold.length/2)]}`);
       return realSold;
     }
     if (realSold && realSold.length > 0) {
       console.log(`[eBay API] Only ${realSold.length} sold comps found, supplementing with active estimates`);
+    } else {
+      console.log(`[eBay Finding API] No real sold comps returned — will fall back to active listing estimates`);
     }
   } catch (err) {
     console.warn(`[eBay API] Finding API failed, falling back to active estimates:`, err.message);

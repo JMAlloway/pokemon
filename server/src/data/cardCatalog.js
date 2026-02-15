@@ -77,7 +77,7 @@ const CARD_CATALOG = [
 
   {
     name: 'Mega Evolution',
-    code: 'SV8a',
+    code: 'me1',
     era: 'Scarlet & Violet',
     printedTotal: '096',
     cards: [
@@ -137,7 +137,7 @@ const CARD_CATALOG = [
 
   {
     name: 'Phantasmal Flames',
-    code: 'ME02',
+    code: 'me2',
     era: 'Scarlet & Violet',
     printedTotal: '094',
     cards: [

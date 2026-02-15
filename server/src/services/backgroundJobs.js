@@ -279,27 +279,39 @@ export async function executeSearch(searchQuery) {
           soldPrice: Number(s.soldPrice),
           shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
           soldAt: s.soldAt,
-          ebayUrl: s.ebayUrl || null
+          ebayUrl: s.ebayUrl || null,
+          source: s.source || 'eBay'
         }));
       } catch (dbErr) {
         console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
       }
 
-      // Fetch from eBay sold/completed API if no sold data in DB,
-      // or if less than half have shipping data, or if most comps are missing eBay URLs
+      // Fetch from eBay sold/completed API if:
+      // - No sold data in DB, OR
+      // - Less than half have shipping data, OR
+      // - Most comps are missing eBay URLs, OR
+      // - Most stored data is active listing estimates (not real sold data)
       const shippingCoverage = soldData.length > 0
         ? soldData.filter(s => s.shippingCost !== null).length / soldData.length
         : 0;
       const urlCoverage = soldData.length > 0
         ? soldData.filter(s => s.ebayUrl).length / soldData.length
         : 0;
-      if (soldData.length === 0 || shippingCoverage < 0.5 || urlCoverage < 0.5) {
+      // Check if stored data is mostly estimates rather than real sold data
+      const estimateCount = soldData.length > 0
+        ? soldData.filter(s => s.source === 'eBay-active-estimate' || s.source === 'sample').length
+        : 0;
+      const isEstimateData = soldData.length > 0 && estimateCount / soldData.length > 0.5;
+      if (isEstimateData) {
+        console.log(`[BackgroundJobs] Stored sold data is ${Math.round(estimateCount/soldData.length*100)}% estimates — forcing re-fetch`);
+      }
+      if (soldData.length === 0 || shippingCoverage < 0.5 || urlCoverage < 0.5 || isEstimateData) {
         try {
           const { searchSoldListings } = await import('./ebayApi.js');
           const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
           if (freshSold.length > 0) {
-            // Clear old comps with poor shipping/URL data and replace with fresh ones
-            if (soldData.length > 0 && (shippingCoverage < 0.5 || urlCoverage < 0.5)) {
+            // Clear old comps if they had poor quality or were estimates
+            if (soldData.length > 0 && (shippingCoverage < 0.5 || urlCoverage < 0.5 || isEstimateData)) {
               await prisma.recentSoldListing.deleteMany({
                 where: { cardName: searchQuery.cardName }
               });
