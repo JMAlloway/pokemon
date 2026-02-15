@@ -319,7 +319,8 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
     const params = new URLSearchParams({
       q: query,
       category_ids: POKEMON_CARDS_CATEGORY,
-      limit: String(searchLimit)
+      limit: String(searchLimit),
+      fieldgroups: 'EXTENDED'
     });
     const filters = [`buyingOptions:{${buyingOption}}`, ...baseFilters];
     params.append('filter', filters.join(','));
