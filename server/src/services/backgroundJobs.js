@@ -498,6 +498,7 @@ export async function executeSearch(searchQuery) {
           dealScore,
           recencyScore: baseline.recencyScore,
           sellerFeedbackPercent: listing.sellerFeedbackPercent,
+          description: listing.description,
           buyingOption: listing.buyingOption || 'FIXED_PRICE',
           bidCount: listing.bidCount,
           currentBidPrice: listing.currentBidPrice,
