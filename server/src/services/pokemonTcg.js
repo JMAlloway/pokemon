@@ -1,6 +1,6 @@
 import { KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS } from './typoDetection.js';
 import { similarityScore } from '../utils/levenshtein.js';
-import { CATALOG_CARD_NAMES, CATALOG_SET_NAMES } from '../data/cardCatalog.js';
+import CARD_CATALOG, { CATALOG_CARD_NAMES, CATALOG_SET_NAMES } from '../data/cardCatalog.js';
 
 // Combined list of all known card names (Pokemon + Trainers + Catalog)
 const ALL_KNOWN_CARDS = [
@@ -200,6 +200,10 @@ export function getSetSuggestions(partial) {
  * We pick the best variant based on rarity and return the `market` price,
  * which is the official TCGPlayer Market Price.
  *
+ * Uses a cascading query strategy: if the most specific query (name + set + number)
+ * returns no results, progressively broader queries are tried so new sets that
+ * pokemontcg.io hasn't indexed yet can still resolve via name + number alone.
+ *
  * @param {{ cardName: string, set?: string, cardNumber?: string, rarity?: string }} opts
  * @returns {Promise<{ market: number, low: number, mid: number, high: number, updatedAt: string, variant: string } | null>}
  */
@@ -219,80 +223,135 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
   const numberMatch = (cardNumber || cardName).match(/(\d{1,3})\s*\/\s*\d{2,3}/);
   const number = numberMatch ? numberMatch[1].replace(/^0+/, '') : null;
 
-  // Build query parts
-  const queryParts = [];
-  queryParts.push(`name:"${baseName}"`);
-  if (set) queryParts.push(`set.name:"${set}"`);
-  if (number) queryParts.push(`number:"${number}"`);
+  // Look up set code from the card catalog (e.g. "Phantasmal Flames" → "ME02")
+  const catalogSet = set ? CARD_CATALOG.find(s => s.name === set) : null;
+  const setCode = catalogSet?.code?.toLowerCase() || null;
 
-  const query = queryParts.join(' ');
-  const url = `${POKEMON_TCG_API_BASE}/cards?q=${encodeURIComponent(query)}&pageSize=5&select=name,number,set,tcgplayer,rarity`;
+  // Build cascading queries: most specific → broadest.
+  // pokemontcg.io may not have new sets yet, so we try without set filters as a fallback.
+  const queries = [];
 
-  try {
-    console.log(`[TCGPlayer] Fetching price: ${query}`);
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-
-    if (!response.ok) {
-      console.warn(`[TCGPlayer] API returned ${response.status}`);
-      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
-      return null;
-    }
-
-    const data = await response.json();
-    if (!data.data || data.data.length === 0) {
-      console.log(`[TCGPlayer] No card found for: ${query}`);
-      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
-      return null;
-    }
-
-    // Pick the best matching card (prefer exact number match)
-    let card = data.data[0];
-    if (number) {
-      const exactMatch = data.data.find(c => String(c.number) === number);
-      if (exactMatch) card = exactMatch;
-    }
-
-    if (!card.tcgplayer?.prices) {
-      console.log(`[TCGPlayer] No pricing data for ${card.name} (${card.set?.name})`);
-      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
-      return null;
-    }
-
-    // Pick the best price variant based on rarity
-    const variant = pickPriceVariant(card.tcgplayer.prices, rarity);
-    if (!variant) {
-      console.log(`[TCGPlayer] No usable price variant for ${card.name}`);
-      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
-      return null;
-    }
-
-    const prices = card.tcgplayer.prices[variant];
-    if (!prices.market && !prices.mid) {
-      console.log(`[TCGPlayer] No market/mid price for ${card.name} (${variant})`);
-      pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
-      return null;
-    }
-
-    const result = {
-      market: prices.market || prices.mid,
-      low: prices.low || null,
-      mid: prices.mid || null,
-      high: prices.high || null,
-      directLow: prices.directLow || null,
-      updatedAt: card.tcgplayer.updatedAt || null,
-      variant,
-      cardName: card.name,
-      setName: card.set?.name || set
-    };
-
-    console.log(`[TCGPlayer] ${card.name} (${card.set?.name}) ${variant}: market=$${result.market}`);
-    pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
-    return result;
-  } catch (err) {
-    console.warn(`[TCGPlayer] Price fetch failed:`, err.message);
-    pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
-    return null;
+  // 1. Most specific: name + set name + number
+  if (set && number) {
+    queries.push({ q: `name:"${baseName}" set.name:"${set}" number:"${number}"`, label: 'name+set+number' });
   }
+  // 2. Try set code (pokemontcg.io IDs sometimes differ from set names)
+  if (setCode && number) {
+    queries.push({ q: `set.id:"${setCode}" number:"${number}"`, label: 'setCode+number' });
+  }
+  // 3. Name + number only (no set filter — catches new sets not yet indexed by name)
+  if (number) {
+    queries.push({ q: `name:"${baseName}" number:"${number}"`, label: 'name+number' });
+  }
+  // 4. Broadest: just name (last resort)
+  queries.push({ q: `name:"${baseName}"`, label: 'name-only' });
+
+  // Deduplicate queries
+  const seen = new Set();
+  const uniqueQueries = queries.filter(({ q }) => {
+    if (seen.has(q)) return false;
+    seen.add(q);
+    return true;
+  });
+
+  for (const { q, label } of uniqueQueries) {
+    const url = `${POKEMON_TCG_API_BASE}/cards?q=${encodeURIComponent(q)}&pageSize=10&select=name,number,set,tcgplayer,rarity`;
+
+    try {
+      console.log(`[TCGPlayer] Trying ${label}: ${q}`);
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+      if (!response.ok) {
+        console.warn(`[TCGPlayer] API returned ${response.status} for ${label}`);
+        continue;
+      }
+
+      const data = await response.json();
+      if (!data.data || data.data.length === 0) {
+        console.log(`[TCGPlayer] No results for ${label}`);
+        continue;
+      }
+
+      // Pick the best matching card from results
+      const card = pickBestCard(data.data, { baseName, number, set, setCode });
+      if (!card) {
+        console.log(`[TCGPlayer] No suitable match in ${data.data.length} results for ${label}`);
+        continue;
+      }
+
+      if (!card.tcgplayer?.prices) {
+        console.log(`[TCGPlayer] No pricing data for ${card.name} (${card.set?.name})`);
+        continue;
+      }
+
+      // Pick the best price variant based on rarity
+      const variant = pickPriceVariant(card.tcgplayer.prices, rarity);
+      if (!variant) {
+        console.log(`[TCGPlayer] No usable price variant for ${card.name}`);
+        continue;
+      }
+
+      const prices = card.tcgplayer.prices[variant];
+      if (!prices.market && !prices.mid) {
+        console.log(`[TCGPlayer] No market/mid price for ${card.name} (${variant})`);
+        continue;
+      }
+
+      const result = {
+        market: prices.market || prices.mid,
+        low: prices.low || null,
+        mid: prices.mid || null,
+        high: prices.high || null,
+        directLow: prices.directLow || null,
+        updatedAt: card.tcgplayer.updatedAt || null,
+        variant,
+        cardName: card.name,
+        setName: card.set?.name || set
+      };
+
+      console.log(`[TCGPlayer] Found via ${label}: ${card.name} (${card.set?.name}) ${variant}: market=$${result.market}`);
+      pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      return result;
+    } catch (err) {
+      console.warn(`[TCGPlayer] ${label} failed:`, err.message);
+      continue;
+    }
+  }
+
+  console.log(`[TCGPlayer] All queries exhausted for "${baseName}" — no pricing found`);
+  pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+  return null;
+}
+
+/**
+ * Pick the best matching card from API results.
+ * Prefers: exact number match in the expected set > exact number in any set > first result.
+ */
+function pickBestCard(cards, { baseName, number, set, setCode }) {
+  if (cards.length === 1) return cards[0];
+
+  // Filter to cards that have TCGPlayer pricing
+  const withPricing = cards.filter(c => c.tcgplayer?.prices);
+  const pool = withPricing.length > 0 ? withPricing : cards;
+
+  // Best: exact number + matching set
+  if (number && set) {
+    const match = pool.find(c =>
+      String(c.number) === number &&
+      (c.set?.name?.toLowerCase() === set.toLowerCase() ||
+       c.set?.id?.toLowerCase() === setCode)
+    );
+    if (match) return match;
+  }
+
+  // Good: exact number match (any set)
+  if (number) {
+    const match = pool.find(c => String(c.number) === number);
+    if (match) return match;
+  }
+
+  // Fallback: first card with pricing
+  return pool[0] || cards[0];
 }
 
 /**
