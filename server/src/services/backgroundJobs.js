@@ -4,6 +4,7 @@ import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShip
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
 import { fetchTcgPlayerPrice } from './pokemonTcg.js';
+import { fetchTcgdexPrice } from './tcgdex.js';
 
 const runningJobs = new Map();
 let isProcessing = false;
@@ -264,7 +265,29 @@ export async function executeSearch(searchQuery) {
       console.warn(`[BackgroundJobs] TCGPlayer price fetch failed:`, tcgErr.message);
     }
 
-    // 2b. Fall back to eBay sold comps if TCGPlayer unavailable
+    // 2a2. Try TCGdex as fallback (free, no auth, has TCGPlayer + Cardmarket prices)
+    if (!baseline) {
+      try {
+        const tcgdexPrice = await fetchTcgdexPrice({
+          cardName: searchQuery.cardName,
+          set: searchQuery.set,
+          rarity: searchQuery.rarity
+        });
+        if (tcgdexPrice?.market) {
+          baseline = {
+            weightedPrice: tcgdexPrice.market,
+            recencyScore: 90,
+            sampleSize: null
+          };
+          baselineSource = 'tcgdex';
+          console.log(`[BackgroundJobs] Using TCGdex price: $${tcgdexPrice.market} (${tcgdexPrice.variant}, source: ${tcgdexPrice.source}, updated ${tcgdexPrice.updatedAt})`);
+        }
+      } catch (tcgdexErr) {
+        console.warn(`[BackgroundJobs] TCGdex price fetch failed:`, tcgdexErr.message);
+      }
+    }
+
+    // 2b. Fall back to eBay sold comps if TCGPlayer/TCGdex unavailable
     if (!baseline) {
       let soldData = [];
 
