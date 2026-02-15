@@ -207,6 +207,11 @@ export function getSetSuggestions(partial) {
  * @param {{ cardName: string, set?: string, cardNumber?: string, rarity?: string }} opts
  * @returns {Promise<{ market: number, low: number, mid: number, high: number, updatedAt: string, variant: string } | null>}
  */
+// Hard ceiling for the entire TCGPlayer lookup (set resolution + card queries).
+// If pokemontcg.io is slow or down, we bail out and let the caller fall through
+// to eBay-based pricing instead of blocking the whole search.
+const TCGPLAYER_OVERALL_TIMEOUT_MS = 8000;
+
 export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity }) {
   // Build cache key
   const cacheKey = `tcgprice_${cardName}_${set || ''}_${cardNumber || ''}`;
@@ -215,6 +220,24 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
     return cached.data;
   }
 
+  // Wrap the entire lookup in a hard timeout so a slow pokemontcg.io API
+  // never blocks the search response. Returns null on timeout.
+  try {
+    const result = await Promise.race([
+      _fetchTcgPlayerPriceInner({ cardName, set, cardNumber, rarity, cacheKey }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('TCGPlayer overall timeout')), TCGPLAYER_OVERALL_TIMEOUT_MS)
+      )
+    ]);
+    return result;
+  } catch (err) {
+    console.warn(`[TCGPlayer] Aborted: ${err.message} — falling through to eBay`);
+    pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+    return null;
+  }
+}
+
+async function _fetchTcgPlayerPriceInner({ cardName, set, cardNumber, rarity, cacheKey }) {
   // Use API key for higher rate limits if configured
   const apiKey = process.env.POKEMON_TCG_API_KEY;
   const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
@@ -228,9 +251,6 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
   const number = numberMatch ? numberMatch[1].replace(/^0+/, '') : null;
 
   // Step 1: Discover the actual pokemontcg.io set ID.
-  // Our catalog stores short names like "Phantasmal Flames" but the API may use
-  // "Mega Evolution: Phantasmal Flames" or a completely different ID. Query the
-  // /v2/sets endpoint to resolve it.
   let resolvedSetId = null;
   if (set) {
     resolvedSetId = await resolveSetId(set, headers);
@@ -239,19 +259,15 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
   // Step 2: Build cascading card queries using the resolved set ID.
   const queries = [];
 
-  // 1. Resolved set ID + number (most reliable if set was found)
   if (resolvedSetId && number) {
     queries.push({ q: `set.id:"${resolvedSetId}" number:"${number}"`, label: `setId(${resolvedSetId})+number` });
   }
-  // 2. Resolved set ID + name (in case number format differs)
   if (resolvedSetId) {
     queries.push({ q: `set.id:"${resolvedSetId}" name:"${baseName}"`, label: `setId(${resolvedSetId})+name` });
   }
-  // 3. Name + number only (no set filter — catches cards across all sets)
   if (number) {
     queries.push({ q: `name:"${baseName}" number:"${number}"`, label: 'name+number' });
   }
-  // 4. Broadest: just name (last resort — pickBestCard will disambiguate)
   queries.push({ q: `name:"${baseName}"`, label: 'name-only' });
 
   // Deduplicate queries
@@ -269,7 +285,7 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
       console.log(`[TCGPlayer] Trying ${label}: ${q}`);
       const response = await fetch(url, {
         headers,
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(5000)
       });
 
       if (!response.ok) {
@@ -374,7 +390,7 @@ async function resolveSetId(setName, headers = {}) {
       console.log(`[TCGPlayer] Resolving set: ${sq}`);
       const response = await fetch(url, {
         headers,
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(4000)
       });
 
       if (!response.ok) continue;
