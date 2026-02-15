@@ -11,23 +11,32 @@ ALTER TABLE "SavedListing" DROP CONSTRAINT IF EXISTS "SavedListing_ebayListingId
 
 -- Step 2: Add listingId column to SavedListing (FK to EbayListing.id)
 -- Populate it from the existing ebayListingId relationship
-ALTER TABLE "SavedListing" ADD COLUMN "listingId" UUID;
+ALTER TABLE "SavedListing" ADD COLUMN IF NOT EXISTS "listingId" UUID;
 
 UPDATE "SavedListing" sl
 SET "listingId" = el."id"
 FROM "EbayListing" el
-WHERE sl."ebayListingId" = el."ebayListingId";
+WHERE sl."ebayListingId" = el."ebayListingId"
+  AND sl."listingId" IS NULL;
 
 -- Remove any orphaned SavedListings that don't match an EbayListing
 DELETE FROM "SavedListing" WHERE "listingId" IS NULL;
 
 -- Now make it NOT NULL and UNIQUE
 ALTER TABLE "SavedListing" ALTER COLUMN "listingId" SET NOT NULL;
-ALTER TABLE "SavedListing" ADD CONSTRAINT "SavedListing_listingId_key" UNIQUE ("listingId");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'SavedListing_listingId_key') THEN
+    ALTER TABLE "SavedListing" ADD CONSTRAINT "SavedListing_listingId_key" UNIQUE ("listingId");
+  END IF;
+END $$;
 
 -- Step 3: Add the new FK from SavedListing.listingId to EbayListing.id
-ALTER TABLE "SavedListing" ADD CONSTRAINT "SavedListing_listingId_fkey"
-  FOREIGN KEY ("listingId") REFERENCES "EbayListing"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'SavedListing_listingId_fkey') THEN
+    ALTER TABLE "SavedListing" ADD CONSTRAINT "SavedListing_listingId_fkey"
+      FOREIGN KEY ("listingId") REFERENCES "EbayListing"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 -- Step 4: Drop the old unique constraint on EbayListing.ebayListingId
 ALTER TABLE "EbayListing" DROP CONSTRAINT IF EXISTS "EbayListing_ebayListingId_key";
@@ -37,8 +46,12 @@ ALTER TABLE "EbayListing" DROP CONSTRAINT IF EXISTS "EbayListing_ebayListingId_k
 ALTER TABLE "SavedListing" DROP CONSTRAINT IF EXISTS "SavedListing_ebayListingId_key";
 
 -- Step 6: Add compound unique constraint on EbayListing (searchQueryId + ebayListingId)
-ALTER TABLE "EbayListing" ADD CONSTRAINT "EbayListing_searchQueryId_ebayListingId_key"
-  UNIQUE ("searchQueryId", "ebayListingId");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'EbayListing_searchQueryId_ebayListingId_key') THEN
+    ALTER TABLE "EbayListing" ADD CONSTRAINT "EbayListing_searchQueryId_ebayListingId_key"
+      UNIQUE ("searchQueryId", "ebayListingId");
+  END IF;
+END $$;
 
 -- Step 7: Add index on SavedListing.ebayListingId for monitoring queries
 CREATE INDEX IF NOT EXISTS "SavedListing_ebayListingId_idx" ON "SavedListing"("ebayListingId");
