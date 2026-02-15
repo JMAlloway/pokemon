@@ -12,6 +12,9 @@ import searchRoutes from './routes/search.js';
 import savedSearchRoutes from './routes/savedSearches.js';
 import savedDealRoutes from './routes/savedDeals.js';
 import listingRoutes from './routes/listings.js';
+import snipeWatchlistRoutes from './routes/snipeWatchlist.js';
+import sellerRoutes from './routes/sellers.js';
+import marketAlertRoutes from './routes/marketAlerts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,6 +102,9 @@ async function start() {
     app.use('/api/saved-searches', savedSearchRoutes);
     app.use('/api/saved-deals', savedDealRoutes);
     app.use('/api/listings', listingRoutes);
+    app.use('/api/snipe-watchlist', snipeWatchlistRoutes);
+    app.use('/api/sellers', sellerRoutes);
+    app.use('/api/market-alerts', marketAlertRoutes);
 
     // Serve static frontend in production (after API routes so they take priority)
     const clientDistPath = path.join(__dirname, '../../client/dist');

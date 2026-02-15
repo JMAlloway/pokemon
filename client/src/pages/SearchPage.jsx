@@ -41,6 +41,7 @@ export default function SearchPage() {
   const dealsCount = listings.filter(l => Number(l.priceGapPercent) > 10).length;
   const auctionCount = listings.filter(l => l.buyingOption === 'AUCTION').length;
   const binCount = listings.filter(l => l.buyingOption !== 'AUCTION').length;
+  const bestOfferCount = listings.filter(l => l.acceptsBestOffer).length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -105,6 +106,11 @@ export default function SearchPage() {
               {typoCount > 0 && (
                 <span className="text-sm text-typo-amber font-medium">
                   {typoCount} with typos
+                </span>
+              )}
+              {bestOfferCount > 0 && (
+                <span className="text-sm text-emerald-400 font-medium">
+                  {bestOfferCount} accept Best Offer
                 </span>
               )}
               {dealsCount > 0 && (

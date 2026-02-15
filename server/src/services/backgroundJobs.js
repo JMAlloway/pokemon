@@ -411,6 +411,7 @@ export async function executeSearch(searchQuery) {
           auctionEndDate: listing.auctionEndDate,
           shippingCost: listing.shippingCost,
           shippingEstimated: listing.shippingEstimated || false,
+          acceptsBestOffer: listing.acceptsBestOffer || false,
           listingStatus: listing.listingStatus || 'active'
         },
         update: {
@@ -429,6 +430,7 @@ export async function executeSearch(searchQuery) {
           auctionEndDate: listing.auctionEndDate,
           shippingCost: listing.shippingCost,
           shippingEstimated: listing.shippingEstimated || false,
+          acceptsBestOffer: listing.acceptsBestOffer || false,
           listingStatus: listing.listingStatus || 'active',
           lastCheckedAt: new Date()
         }
@@ -471,6 +473,14 @@ export async function executeSearch(searchQuery) {
         listingsFound: storedCount
       }
     });
+
+    // 9. Track seller intelligence — accumulate seller stats across searches
+    await updateSellerProfiles(topListings, searchQuery.cardName);
+
+    // 10. Capture market snapshot for volatility tracking
+    if (baseline.weightedPrice) {
+      await captureMarketSnapshot(searchQuery.cardName, searchQuery.set, baseline);
+    }
 
     console.log(`[BackgroundJobs] Search complete for "${searchQuery.cardName}": ${storedCount} listings stored, baseline=$${baseline.weightedPrice}`);
 
@@ -602,6 +612,111 @@ async function storeSoldListings(soldListings, cardName, set) {
   await prisma.recentSoldListing.deleteMany({
     where: { soldAt: { lt: cutoffDate } }
   });
+}
+
+/**
+ * Update seller profiles with data from this search's listings.
+ * Tracks total listings seen, deals count, typos count, and average deal score.
+ */
+async function updateSellerProfiles(scoredListings, cardName) {
+  // Group listings by seller
+  const sellerMap = new Map();
+  for (const { listing, dealScore } of scoredListings) {
+    const name = listing.sellerName;
+    if (!name) continue;
+    if (!sellerMap.has(name)) {
+      sellerMap.set(name, { listings: [], dealScores: [], priceGaps: [], typos: 0 });
+    }
+    const entry = sellerMap.get(name);
+    entry.listings.push(listing);
+    entry.dealScores.push(dealScore);
+    if (listing.hasTypo) entry.typos++;
+  }
+
+  for (const [sellerName, data] of sellerMap) {
+    const isDeal = (score) => score >= 40;
+    const newDeals = data.dealScores.filter(isDeal).length;
+    const avgScore = data.dealScores.reduce((a, b) => a + b, 0) / data.dealScores.length;
+
+    try {
+      const existing = await prisma.sellerProfile.findUnique({
+        where: { sellerName }
+      });
+
+      if (existing) {
+        const totalListings = existing.totalListingsSeen + data.listings.length;
+        const totalDeals = existing.dealsCount + newDeals;
+        const totalTypos = existing.typosCount + data.typos;
+        // Running average of deal scores
+        const prevWeight = existing.totalListingsSeen;
+        const newWeight = data.listings.length;
+        const combinedAvg = (Number(existing.avgDealScore || 0) * prevWeight + avgScore * newWeight) / totalListings;
+
+        // Add new card name if not already tracked
+        const cardNames = existing.cardNames || [];
+        if (!cardNames.includes(cardName)) {
+          cardNames.push(cardName);
+        }
+
+        await prisma.sellerProfile.update({
+          where: { sellerName },
+          data: {
+            totalListingsSeen: totalListings,
+            dealsCount: totalDeals,
+            typosCount: totalTypos,
+            avgDealScore: Math.round(combinedAvg * 100) / 100,
+            lastSeenAt: new Date(),
+            cardNames
+          }
+        });
+      } else {
+        await prisma.sellerProfile.create({
+          data: {
+            sellerName,
+            totalListingsSeen: data.listings.length,
+            dealsCount: newDeals,
+            typosCount: data.typos,
+            avgDealScore: Math.round(avgScore * 100) / 100,
+            lastSeenAt: new Date(),
+            firstSeenAt: new Date(),
+            cardNames: [cardName]
+          }
+        });
+      }
+    } catch (err) {
+      // Non-critical — don't fail the search over seller tracking
+      console.warn(`[BackgroundJobs] Seller profile update failed for "${sellerName}":`, err.message);
+    }
+  }
+}
+
+/**
+ * Capture a market snapshot for volatility tracking.
+ * Stores the baseline price at the time of each search so we can detect
+ * week-over-week price shifts.
+ */
+async function captureMarketSnapshot(cardName, set, baseline) {
+  try {
+    await prisma.marketSnapshot.create({
+      data: {
+        cardName,
+        set: set || null,
+        baselinePrice: baseline.weightedPrice,
+        sampleSize: baseline.sampleSize,
+        recencyScore: baseline.recencyScore,
+        source: 'search'
+      }
+    });
+
+    // Clean up old snapshots (keep last 90 days)
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
+    await prisma.marketSnapshot.deleteMany({
+      where: { cardName, capturedAt: { lt: cutoff } }
+    });
+  } catch (err) {
+    console.warn(`[BackgroundJobs] Market snapshot failed for "${cardName}":`, err.message);
+  }
 }
 
 /**

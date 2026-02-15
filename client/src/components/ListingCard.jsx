@@ -96,6 +96,11 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
                       BIN
                     </span>
                   )}
+                  {listing.acceptsBestOffer && (
+                    <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                      Best Offer
+                    </span>
+                  )}
                   <span className="text-xs text-text-secondary">{listing.cardName}</span>
                   {listing.condition && (
                     <span className="text-xs text-text-muted">· {listing.condition}</span>

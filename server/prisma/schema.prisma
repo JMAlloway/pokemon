@@ -65,6 +65,7 @@ model EbayListing {
   auctionEndDate      DateTime?
   shippingCost        Decimal?      @db.Decimal(10, 2)
   shippingEstimated   Boolean       @default(false)
+  acceptsBestOffer    Boolean       @default(false)
   listingStatus       ListingStatus @default(active)
   createdAt           DateTime      @default(now())
   lastCheckedAt       DateTime      @default(now())
@@ -120,6 +121,36 @@ model RecentSoldListing {
 
   @@index([cardName])
   @@index([soldAt])
+}
+
+model SellerProfile {
+  id                    String   @id @default(uuid()) @db.Uuid
+  sellerName            String   @unique @db.VarChar(255)
+  totalListingsSeen     Int      @default(0)
+  dealsCount            Int      @default(0)
+  typosCount            Int      @default(0)
+  avgDealScore          Decimal? @db.Decimal(5, 2)
+  avgPriceGapPercent    Decimal? @db.Decimal(6, 2)
+  lastSeenAt            DateTime @default(now())
+  firstSeenAt           DateTime @default(now())
+  cardNames             String[] @db.VarChar(255)
+
+  @@index([dealsCount(sort: Desc)])
+  @@index([sellerName])
+}
+
+model MarketSnapshot {
+  id                String   @id @default(uuid()) @db.Uuid
+  cardName          String   @db.VarChar(255)
+  set               String?  @db.VarChar(100)
+  baselinePrice     Decimal  @db.Decimal(10, 2)
+  sampleSize        Int      @db.SmallInt
+  recencyScore      Decimal? @db.Decimal(5, 2)
+  source            String   @default("search") @db.VarChar(50)
+  capturedAt        DateTime @default(now())
+
+  @@index([cardName, capturedAt])
+  @@index([capturedAt])
 }
 
 model TypoPattern {

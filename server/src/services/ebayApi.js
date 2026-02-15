@@ -357,6 +357,7 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
       const buyingOptions = item.buyingOptions || [];
       const isAuction = buyingOptions.includes('AUCTION');
       const buyingOption = isAuction ? 'AUCTION' : 'FIXED_PRICE';
+      const acceptsBestOffer = !isAuction && buyingOptions.includes('BEST_OFFER');
       const bidPrice = isAuction ? parseFloat(item.currentBidPrice?.value || item.price?.value || 0) : null;
 
       // Shipping: eBay returns shippingOptions array; first entry has the cost
@@ -383,6 +384,7 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
         condition: item.condition || null,
         listingStatus: 'active',
         buyingOption,
+        acceptsBestOffer,
         bidCount: isAuction ? (item.bidCount || 0) : null,
         currentBidPrice: bidPrice,
         auctionEndDate: item.itemEndDate ? new Date(item.itemEndDate) : null
