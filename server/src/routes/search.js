@@ -3,7 +3,7 @@ import prisma from '../db.js';
 
 import { validateSearchQuery } from '../middleware/validate.js';
 import { executeSearch } from '../services/backgroundJobs.js';
-import { validateCardName, getAutocompleteSuggestions, getSetSuggestions } from '../services/pokemonTcg.js';
+import { validateCardName, getAutocompleteSuggestions, getSetSuggestions, fetchTcgPlayerPrice } from '../services/pokemonTcg.js';
 import { getRateLimitStatus } from '../services/ebayApi.js';
 import { flagPriceOutliers } from '../services/dealScoring.js';
 import CARD_CATALOG, { RARITY_LABELS, RARITY_ORDER } from '../data/cardCatalog.js';
@@ -210,6 +210,26 @@ router.get('/catalog', (req, res) => {
 // GET /api/search/rate-limit
 router.get('/rate-limit', (req, res) => {
   res.json(getRateLimitStatus());
+});
+
+// GET /api/search/tcg-price?cardName=Mega+Charizard+X+ex+130/094&set=Phantasmal+Flames&rarity=megaIllustrationRare
+// Diagnostic endpoint to test TCGPlayer price fetching directly
+router.get('/tcg-price', async (req, res) => {
+  const { cardName, set, rarity } = req.query;
+  if (!cardName) {
+    return res.status(400).json({ error: 'cardName query param required' });
+  }
+  try {
+    const result = await fetchTcgPlayerPrice({ cardName, set, rarity });
+    res.json({
+      input: { cardName, set, rarity },
+      result,
+      source: result ? 'tcgplayer' : 'none',
+      note: result ? `TCGPlayer market=$${result.market} via ${result.variant}` : 'No TCGPlayer pricing found — check server logs for query details'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

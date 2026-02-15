@@ -228,22 +228,23 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
   const setCode = catalogSet?.code?.toLowerCase() || null;
 
   // Build cascading queries: most specific → broadest.
-  // pokemontcg.io may not have new sets yet, so we try without set filters as a fallback.
+  // pokemontcg.io often stores full series names (e.g. "Mega Evolution: Phantasmal Flames"
+  // instead of just "Phantasmal Flames"), so we use wildcard matches for set names.
   const queries = [];
 
-  // 1. Most specific: name + set name + number
+  // 1. Wildcard set name + number (handles "Mega Evolution: Phantasmal Flames" etc.)
   if (set && number) {
-    queries.push({ q: `name:"${baseName}" set.name:"${set}" number:"${number}"`, label: 'name+set+number' });
+    queries.push({ q: `name:"${baseName}" set.name:"*${set}*" number:"${number}"`, label: 'name+set(wild)+number' });
   }
   // 2. Try set code (pokemontcg.io IDs sometimes differ from set names)
   if (setCode && number) {
-    queries.push({ q: `set.id:"${setCode}" number:"${number}"`, label: 'setCode+number' });
+    queries.push({ q: `set.id:${setCode}* number:"${number}"`, label: 'setCode+number' });
   }
   // 3. Name + number only (no set filter — catches new sets not yet indexed by name)
   if (number) {
     queries.push({ q: `name:"${baseName}" number:"${number}"`, label: 'name+number' });
   }
-  // 4. Broadest: just name (last resort)
+  // 4. Broadest: just name (last resort — pickBestCard will disambiguate)
   queries.push({ q: `name:"${baseName}"`, label: 'name-only' });
 
   // Deduplicate queries
@@ -254,12 +255,19 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
     return true;
   });
 
+  // Use API key for higher rate limits if configured
+  const apiKey = process.env.POKEMON_TCG_API_KEY;
+  const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
+
   for (const { q, label } of uniqueQueries) {
     const url = `${POKEMON_TCG_API_BASE}/cards?q=${encodeURIComponent(q)}&pageSize=10&select=name,number,set,tcgplayer,rarity`;
 
     try {
       console.log(`[TCGPlayer] Trying ${label}: ${q}`);
-      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(10000)
+      });
 
       if (!response.ok) {
         console.warn(`[TCGPlayer] API returned ${response.status} for ${label}`);
