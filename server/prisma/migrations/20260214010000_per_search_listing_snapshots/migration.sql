@@ -24,11 +24,7 @@ DELETE FROM "SavedListing" WHERE "listingId" IS NULL;
 
 -- Now make it NOT NULL and UNIQUE
 ALTER TABLE "SavedListing" ALTER COLUMN "listingId" SET NOT NULL;
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'SavedListing_listingId_key') THEN
-    ALTER TABLE "SavedListing" ADD CONSTRAINT "SavedListing_listingId_key" UNIQUE ("listingId");
-  END IF;
-END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS "SavedListing_listingId_key" ON "SavedListing"("listingId");
 
 -- Step 3: Add the new FK from SavedListing.listingId to EbayListing.id
 DO $$ BEGIN
@@ -39,19 +35,14 @@ DO $$ BEGIN
 END $$;
 
 -- Step 4: Drop the old unique constraint on EbayListing.ebayListingId
-ALTER TABLE "EbayListing" DROP CONSTRAINT IF EXISTS "EbayListing_ebayListingId_key";
+DROP INDEX IF EXISTS "EbayListing_ebayListingId_key";
 
 -- Step 5: Drop the old unique constraint on SavedListing.ebayListingId
 -- (keep the column for display/monitoring, just not as a unique FK)
-ALTER TABLE "SavedListing" DROP CONSTRAINT IF EXISTS "SavedListing_ebayListingId_key";
+DROP INDEX IF EXISTS "SavedListing_ebayListingId_key";
 
 -- Step 6: Add compound unique constraint on EbayListing (searchQueryId + ebayListingId)
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'EbayListing_searchQueryId_ebayListingId_key') THEN
-    ALTER TABLE "EbayListing" ADD CONSTRAINT "EbayListing_searchQueryId_ebayListingId_key"
-      UNIQUE ("searchQueryId", "ebayListingId");
-  END IF;
-END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS "EbayListing_searchQueryId_ebayListingId_key" ON "EbayListing"("searchQueryId", "ebayListingId");
 
 -- Step 7: Add index on SavedListing.ebayListingId for monitoring queries
 CREATE INDEX IF NOT EXISTS "SavedListing_ebayListingId_idx" ON "SavedListing"("ebayListingId");
