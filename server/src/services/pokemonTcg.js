@@ -215,6 +215,10 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
     return cached.data;
   }
 
+  // Use API key for higher rate limits if configured
+  const apiKey = process.env.POKEMON_TCG_API_KEY;
+  const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
+
   // Strip card number from card name for the API query
   // e.g. "Mega Charizard X ex 130/094" → "Mega Charizard X ex"
   const baseName = cardName.replace(/\s*\d{1,3}\s*\/\s*\d{2,3}\s*$/, '').trim();
@@ -223,24 +227,27 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
   const numberMatch = (cardNumber || cardName).match(/(\d{1,3})\s*\/\s*\d{2,3}/);
   const number = numberMatch ? numberMatch[1].replace(/^0+/, '') : null;
 
-  // Look up set code from the card catalog (e.g. "Phantasmal Flames" → "ME02")
-  const catalogSet = set ? CARD_CATALOG.find(s => s.name === set) : null;
-  const setCode = catalogSet?.code?.toLowerCase() || null;
+  // Step 1: Discover the actual pokemontcg.io set ID.
+  // Our catalog stores short names like "Phantasmal Flames" but the API may use
+  // "Mega Evolution: Phantasmal Flames" or a completely different ID. Query the
+  // /v2/sets endpoint to resolve it.
+  let resolvedSetId = null;
+  if (set) {
+    resolvedSetId = await resolveSetId(set, headers);
+  }
 
-  // Build cascading queries: most specific → broadest.
-  // pokemontcg.io often stores full series names (e.g. "Mega Evolution: Phantasmal Flames"
-  // instead of just "Phantasmal Flames"), so we use wildcard matches for set names.
+  // Step 2: Build cascading card queries using the resolved set ID.
   const queries = [];
 
-  // 1. Wildcard set name + number (handles "Mega Evolution: Phantasmal Flames" etc.)
-  if (set && number) {
-    queries.push({ q: `name:"${baseName}" set.name:"*${set}*" number:"${number}"`, label: 'name+set(wild)+number' });
+  // 1. Resolved set ID + number (most reliable if set was found)
+  if (resolvedSetId && number) {
+    queries.push({ q: `set.id:"${resolvedSetId}" number:"${number}"`, label: `setId(${resolvedSetId})+number` });
   }
-  // 2. Try set code (pokemontcg.io IDs sometimes differ from set names)
-  if (setCode && number) {
-    queries.push({ q: `set.id:${setCode}* number:"${number}"`, label: 'setCode+number' });
+  // 2. Resolved set ID + name (in case number format differs)
+  if (resolvedSetId) {
+    queries.push({ q: `set.id:"${resolvedSetId}" name:"${baseName}"`, label: `setId(${resolvedSetId})+name` });
   }
-  // 3. Name + number only (no set filter — catches new sets not yet indexed by name)
+  // 3. Name + number only (no set filter — catches cards across all sets)
   if (number) {
     queries.push({ q: `name:"${baseName}" number:"${number}"`, label: 'name+number' });
   }
@@ -254,10 +261,6 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
     seen.add(q);
     return true;
   });
-
-  // Use API key for higher rate limits if configured
-  const apiKey = process.env.POKEMON_TCG_API_KEY;
-  const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
 
   for (const { q, label } of uniqueQueries) {
     const url = `${POKEMON_TCG_API_BASE}/cards?q=${encodeURIComponent(q)}&pageSize=10&select=name,number,set,tcgplayer,rarity`;
@@ -280,8 +283,10 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
         continue;
       }
 
+      console.log(`[TCGPlayer] Got ${data.data.length} results for ${label}: ${data.data.map(c => `${c.name} #${c.number} (${c.set?.name})`).join(', ')}`);
+
       // Pick the best matching card from results
-      const card = pickBestCard(data.data, { baseName, number, set, setCode });
+      const card = pickBestCard(data.data, { baseName, number, set, resolvedSetId });
       if (!card) {
         console.log(`[TCGPlayer] No suitable match in ${data.data.length} results for ${label}`);
         continue;
@@ -295,7 +300,7 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
       // Pick the best price variant based on rarity
       const variant = pickPriceVariant(card.tcgplayer.prices, rarity);
       if (!variant) {
-        console.log(`[TCGPlayer] No usable price variant for ${card.name}`);
+        console.log(`[TCGPlayer] No usable price variant for ${card.name}, available: ${Object.keys(card.tcgplayer.prices).join(', ')}`);
         continue;
       }
 
@@ -331,23 +336,92 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
   return null;
 }
 
+// Cache for resolved set IDs (set name → pokemontcg.io set ID)
+const setIdCache = new Map();
+
+/**
+ * Resolve a set name to a pokemontcg.io set ID.
+ * Handles mismatches like "Phantasmal Flames" → "Mega Evolution: Phantasmal Flames" (id: "mev2")
+ * by searching the /v2/sets endpoint for partial matches.
+ */
+async function resolveSetId(setName, headers = {}) {
+  // Check cache first
+  const cacheKey = `setid_${setName}`;
+  const cached = setIdCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Also look up catalog code
+  const catalogSet = CARD_CATALOG.find(s => s.name === setName);
+  const catalogCode = catalogSet?.code?.toLowerCase() || null;
+
+  // Try multiple set search strategies
+  const setQueries = [
+    // Exact name match
+    `name:"${setName}"`,
+    // Partial name match (for "Phantasmal Flames" inside "Mega Evolution: Phantasmal Flames")
+    `name:"${setName.split(' ').slice(-1)[0]}"`,
+  ];
+  // Add catalog code if available
+  if (catalogCode) {
+    setQueries.push(`id:"${catalogCode}"`);
+  }
+
+  for (const sq of setQueries) {
+    try {
+      const url = `${POKEMON_TCG_API_BASE}/sets?q=${encodeURIComponent(sq)}&select=id,name`;
+      console.log(`[TCGPlayer] Resolving set: ${sq}`);
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      if (!data.data || data.data.length === 0) continue;
+
+      // Find the best matching set
+      const setNameLower = setName.toLowerCase();
+      const exactMatch = data.data.find(s => s.name.toLowerCase() === setNameLower);
+      const containsMatch = data.data.find(s => s.name.toLowerCase().includes(setNameLower));
+      const codeMatch = catalogCode ? data.data.find(s => s.id.toLowerCase() === catalogCode) : null;
+      const match = exactMatch || containsMatch || codeMatch || data.data[0];
+
+      console.log(`[TCGPlayer] Resolved set "${setName}" → id="${match.id}" (API name: "${match.name}")`);
+      setIdCache.set(cacheKey, { data: match.id, timestamp: Date.now() });
+      return match.id;
+    } catch (err) {
+      console.warn(`[TCGPlayer] Set resolve failed for "${sq}":`, err.message);
+      continue;
+    }
+  }
+
+  console.log(`[TCGPlayer] Could not resolve set: "${setName}"`);
+  setIdCache.set(cacheKey, { data: null, timestamp: Date.now() });
+  return null;
+}
+
 /**
  * Pick the best matching card from API results.
  * Prefers: exact number match in the expected set > exact number in any set > first result.
  */
-function pickBestCard(cards, { baseName, number, set, setCode }) {
+function pickBestCard(cards, { baseName, number, set, resolvedSetId }) {
   if (cards.length === 1) return cards[0];
 
   // Filter to cards that have TCGPlayer pricing
   const withPricing = cards.filter(c => c.tcgplayer?.prices);
   const pool = withPricing.length > 0 ? withPricing : cards;
 
-  // Best: exact number + matching set
-  if (number && set) {
+  // Best: exact number + matching set (by ID or partial name)
+  if (number && (resolvedSetId || set)) {
+    const setNameLower = set?.toLowerCase();
     const match = pool.find(c =>
       String(c.number) === number &&
-      (c.set?.name?.toLowerCase() === set.toLowerCase() ||
-       c.set?.id?.toLowerCase() === setCode)
+      (c.set?.id === resolvedSetId ||
+       c.set?.name?.toLowerCase() === setNameLower ||
+       c.set?.name?.toLowerCase().includes(setNameLower))
     );
     if (match) return match;
   }

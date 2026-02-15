@@ -213,19 +213,25 @@ router.get('/rate-limit', (req, res) => {
 });
 
 // GET /api/search/tcg-price?cardName=Mega+Charizard+X+ex+130/094&set=Phantasmal+Flames&rarity=megaIllustrationRare
-// Diagnostic endpoint to test TCGPlayer price fetching directly
+// Diagnostic endpoint to test TCGPlayer price fetching directly.
+// Check server console for detailed [TCGPlayer] logs showing each query step.
 router.get('/tcg-price', async (req, res) => {
   const { cardName, set, rarity } = req.query;
   if (!cardName) {
     return res.status(400).json({ error: 'cardName query param required' });
   }
   try {
+    const startTime = Date.now();
     const result = await fetchTcgPlayerPrice({ cardName, set, rarity });
+    const elapsed = Date.now() - startTime;
     res.json({
       input: { cardName, set, rarity },
       result,
       source: result ? 'tcgplayer' : 'none',
-      note: result ? `TCGPlayer market=$${result.market} via ${result.variant}` : 'No TCGPlayer pricing found — check server logs for query details'
+      elapsed: `${elapsed}ms`,
+      note: result
+        ? `TCGPlayer market=$${result.market} via ${result.variant} (${result.setName})`
+        : 'No TCGPlayer pricing found — check server console for [TCGPlayer] logs'
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
