@@ -86,6 +86,11 @@ export default function ListingCard({ listing, recentSoldListings = [], showSave
                 <h3 className="text-sm font-semibold text-text-primary truncate" title={listing.listingTitle}>
                   {listing.listingTitle}
                 </h3>
+                {listing.description && (
+                  <p className="text-xs text-text-muted mt-0.5 line-clamp-2">
+                    {listing.description.replace(/<[^>]*>/g, '').slice(0, 150)}
+                  </p>
+                )}
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {isAuction ? (
                     <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400">

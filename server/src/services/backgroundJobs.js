@@ -108,18 +108,29 @@ const NON_CARD_PATTERNS = [
   /\bmystery\s*pack\b/i,
   /\bmystery\s*box\b/i,
   /\bsealed\s*pack\b/i,
+  // Reprints / fakes / reproductions
+  /\breprint\b/i,
+  /\breplica\b/i,
+  /\breproduction\b/i,
+  /\bcounterfeit\b/i,
+  /\bbootleg\b/i,
+  /\bfake\b/i,
+  /\bunofficial\b/i,
+  /\bnot\s*(?:official|authentic|genuine|real)\b/i,
 ];
 
 function filterNonCardListings(listings) {
   const before = listings.length;
   const filtered = listings.filter(listing => {
     const title = listing.listingTitle || listing.title || '';
-    return !NON_CARD_PATTERNS.some(pattern => pattern.test(title));
+    const desc = listing.description || listing.shortDescription || '';
+    const textToCheck = title + ' ' + desc;
+    return !NON_CARD_PATTERNS.some(pattern => pattern.test(textToCheck));
   });
 
   const removed = before - filtered.length;
   if (removed > 0) {
-    console.log(`[BackgroundJobs] Non-card filter: removed ${removed}/${before} non-card items (cases, keychains, customs, etc.)`);
+    console.log(`[BackgroundJobs] Non-card filter: removed ${removed}/${before} non-card items (cases, keychains, customs, fakes, etc.)`);
   }
 
   return filtered;
