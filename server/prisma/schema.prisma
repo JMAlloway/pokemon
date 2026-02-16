@@ -46,7 +46,7 @@ model EbayListing {
   listingTitle        String        @db.VarChar(500)
   currentPrice        Decimal       @db.Decimal(10, 2)
   recentSoldPrice     Decimal?      @db.Decimal(10, 2)
-  priceGapPercent     Decimal?      @db.Decimal(6, 2)
+  priceGapPercent     Decimal?      @db.Decimal(10, 2)
   hasTypo             Boolean       @default(false)
   typoDetails         String?       @db.Text
   typoConfidenceScore Decimal?      @db.Decimal(5, 2)
