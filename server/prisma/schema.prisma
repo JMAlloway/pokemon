@@ -240,3 +240,26 @@ enum JobStatus {
   failed
   skipped
 }
+
+model SetCard {
+  id            String   @id @default(uuid()) @db.Uuid
+  setCode       String   @db.VarChar(20)
+  cardNumber    String   @db.VarChar(10)
+  cardName      String   @db.VarChar(255)
+  rarity        String   @db.VarChar(50)
+  imageSmall    String?  @db.Text
+  imageLarge    String?  @db.Text
+  marketPrice   Decimal? @db.Decimal(10, 2)
+  priceLow      Decimal? @db.Decimal(10, 2)
+  priceHigh     Decimal? @db.Decimal(10, 2)
+  priceVariant  String?  @db.VarChar(50)
+  types         String[] @db.VarChar(50)
+  supertype     String?  @db.VarChar(50)
+  subtypes      String[] @db.VarChar(50)
+  hp            String?  @db.VarChar(10)
+  fetchedAt     DateTime @default(now())
+  priceUpdatedAt DateTime @default(now())
+
+  @@unique([setCode, cardNumber])
+  @@index([setCode])
+}

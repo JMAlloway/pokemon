@@ -6,15 +6,21 @@ const router = Router();
 
 const POKEMON_TCG_API_BASE = 'https://api.pokemontcg.io/v2';
 
-// Cache for set card data (images + pricing from pokemontcg.io)
-const setDataCache = new Map();
-const SET_CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
+// How long before we refresh pricing data (images are permanent)
+const PRICE_REFRESH_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// In-memory cache for set metadata (logo, symbol, etc.) — lightweight
+const setMetaCache = new Map();
+const SET_META_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
 /**
- * Resolve a catalog set code to a pokemontcg.io set ID.
- * e.g. "Phantasmal Flames" (code "me2") → pokemontcg.io ID "mev2"
+ * Resolve a catalog set code to a pokemontcg.io set ID + metadata.
  */
-async function resolveApiSetId(setName, catalogCode, headers) {
+async function resolveApiSet(setName, catalogCode, headers) {
+  const cacheKey = `meta_${catalogCode}`;
+  const cached = setMetaCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < SET_META_TTL) return cached.data;
+
   const queries = [
     `name:"${setName}"`,
     `name:"${setName.split(' ').slice(-1)[0]}"`,
@@ -35,6 +41,7 @@ async function resolveApiSetId(setName, catalogCode, headers) {
         || (catalogCode ? data.data.find(s => s.id.toLowerCase() === catalogCode.toLowerCase()) : null)
         || data.data[0];
 
+      setMetaCache.set(cacheKey, { data: match, timestamp: Date.now() });
       return match;
     } catch {
       continue;
@@ -64,92 +71,146 @@ router.get('/:setCode', async (req, res) => {
     return res.status(404).json({ error: 'Set not found in catalog' });
   }
 
-  // Check cache
-  const cacheKey = `set_${setCode}`;
-  const cached = setDataCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < SET_CACHE_TTL) {
-    // Still enrich with live eBay counts (fast DB query)
-    const cards = await enrichWithEbayData(cached.data.cards, catalogSet.name);
-    return res.json({ ...cached.data, cards });
-  }
-
   try {
+    // 1. Check DB for existing card data
+    const dbCards = await prisma.setCard.findMany({
+      where: { setCode: catalogSet.code },
+    });
+    const dbMap = new Map(dbCards.map(c => [c.cardNumber, c]));
+
+    // 2. Determine which cards need fetching (no images) or price refresh
+    const needsImages = catalogSet.cards.filter(c => !dbMap.has(c.number) || !dbMap.get(c.number).imageLarge);
+    const needsPriceRefresh = dbCards.filter(c =>
+      c.imageLarge && Date.now() - new Date(c.priceUpdatedAt).getTime() > PRICE_REFRESH_TTL
+    );
+
+    const needsApiFetch = needsImages.length > 0;
+    const needsPriceUpdate = needsPriceRefresh.length > 0;
+
+    console.log(`[Sets] ${catalogSet.name}: ${dbCards.length} in DB, ${needsImages.length} need images, ${needsPriceRefresh.length} need price refresh`);
+
+    // 3. Resolve set metadata (for logo/symbol)
     const apiKey = process.env.POKEMON_TCG_API_KEY;
     const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
+    const apiSet = await resolveApiSet(catalogSet.name, catalogSet.code, headers);
 
-    // Resolve pokemontcg.io set ID
-    const apiSet = await resolveApiSetId(catalogSet.name, catalogSet.code, headers);
-    const apiSetId = apiSet?.id;
-
-    let apiCards = [];
-    if (apiSetId) {
-      console.log(`[Sets] Resolved "${catalogSet.name}" → pokemontcg.io set "${apiSetId}"`);
-      // Fetch all cards with images + pricing, with pagination support
-      let page = 1;
-      const pageSize = 250;
-      let hasMore = true;
-      while (hasMore) {
-        try {
-          const url = `${POKEMON_TCG_API_BASE}/cards?q=set.id:"${apiSetId}"&page=${page}&pageSize=${pageSize}&select=name,number,rarity,images,tcgplayer,types,supertype,subtypes,hp`;
-          const response = await fetch(url, { headers, signal: AbortSignal.timeout(45000) });
-          if (!response.ok) break;
-          const data = await response.json();
-          const cards = data.data || [];
-          apiCards.push(...cards);
-          hasMore = cards.length === pageSize;
-          page++;
-        } catch (err) {
-          console.warn(`[Sets] Page ${page} fetch failed: ${err.message}`);
-          break;
+    // 4. Fetch from pokemontcg.io only if we need new images or price updates
+    if (needsApiFetch || needsPriceUpdate) {
+      const apiSetId = apiSet?.id;
+      if (apiSetId) {
+        console.log(`[Sets] Fetching cards from pokemontcg.io for "${catalogSet.name}" (set ID: ${apiSetId})`);
+        let apiCards = [];
+        let page = 1;
+        const pageSize = 250;
+        let hasMore = true;
+        while (hasMore) {
+          try {
+            const url = `${POKEMON_TCG_API_BASE}/cards?q=set.id:"${apiSetId}"&page=${page}&pageSize=${pageSize}&select=name,number,rarity,images,tcgplayer,types,supertype,subtypes,hp`;
+            const response = await fetch(url, { headers, signal: AbortSignal.timeout(45000) });
+            if (!response.ok) break;
+            const data = await response.json();
+            const cards = data.data || [];
+            apiCards.push(...cards);
+            hasMore = cards.length === pageSize;
+            page++;
+          } catch (err) {
+            console.warn(`[Sets] Page ${page} fetch failed: ${err.message}`);
+            break;
+          }
         }
+        console.log(`[Sets] Fetched ${apiCards.length} cards from pokemontcg.io`);
+
+        // 5. Upsert all fetched cards into DB
+        let upsertCount = 0;
+        for (const catalogCard of catalogSet.cards) {
+          const cardNum = catalogCard.number.replace(/^0+/, '');
+          const apiCard = apiCards.find(c => String(c.number).replace(/^0+/, '') === cardNum);
+          if (!apiCard) continue;
+
+          // Extract pricing
+          let marketPrice = null, priceLow = null, priceHigh = null, priceVariant = null;
+          if (apiCard.tcgplayer?.prices) {
+            const variant = pickBestVariant(apiCard.tcgplayer.prices, catalogCard.rarity);
+            if (variant) {
+              const prices = apiCard.tcgplayer.prices[variant];
+              marketPrice = prices.market || prices.mid || null;
+              priceLow = prices.low || null;
+              priceHigh = prices.high || null;
+              priceVariant = variant;
+            }
+          }
+
+          await prisma.setCard.upsert({
+            where: { setCode_cardNumber: { setCode: catalogSet.code, cardNumber: catalogCard.number } },
+            create: {
+              setCode: catalogSet.code,
+              cardNumber: catalogCard.number,
+              cardName: catalogCard.name,
+              rarity: catalogCard.rarity,
+              imageSmall: apiCard.images?.small || null,
+              imageLarge: apiCard.images?.large || null,
+              marketPrice,
+              priceLow,
+              priceHigh,
+              priceVariant,
+              types: apiCard.types || [],
+              supertype: apiCard.supertype || null,
+              subtypes: apiCard.subtypes || [],
+              hp: apiCard.hp || null,
+            },
+            update: {
+              imageSmall: apiCard.images?.small || undefined,
+              imageLarge: apiCard.images?.large || undefined,
+              marketPrice,
+              priceLow,
+              priceHigh,
+              priceVariant,
+              types: apiCard.types || [],
+              supertype: apiCard.supertype || null,
+              subtypes: apiCard.subtypes || [],
+              hp: apiCard.hp || null,
+              priceUpdatedAt: new Date(),
+            },
+          });
+          upsertCount++;
+        }
+        console.log(`[Sets] Stored ${upsertCount} cards in DB for "${catalogSet.name}"`);
       }
-      console.log(`[Sets] Fetched ${apiCards.length} cards from pokemontcg.io for "${catalogSet.name}"`);
     }
 
-    // Merge catalog cards with API data
+    // 6. Read final data from DB (now populated)
+    const finalDbCards = await prisma.setCard.findMany({
+      where: { setCode: catalogSet.code },
+    });
+    const finalDbMap = new Map(finalDbCards.map(c => [c.cardNumber, c]));
+
+    // 7. Build response by merging catalog + DB
     const cards = catalogSet.cards.map(catalogCard => {
-      // Match by card number (strip leading zeros for comparison)
-      const cardNum = catalogCard.number.replace(/^0+/, '');
-      const apiCard = apiCards.find(c => String(c.number).replace(/^0+/, '') === cardNum);
-
-      // Extract best price variant
-      let marketPrice = null;
-      let priceVariant = null;
-      let priceLow = null;
-      let priceHigh = null;
-      if (apiCard?.tcgplayer?.prices) {
-        const variant = pickBestVariant(apiCard.tcgplayer.prices, catalogCard.rarity);
-        if (variant) {
-          const prices = apiCard.tcgplayer.prices[variant];
-          marketPrice = prices.market || prices.mid || null;
-          priceLow = prices.low || null;
-          priceHigh = prices.high || null;
-          priceVariant = variant;
-        }
-      }
-
+      const db = finalDbMap.get(catalogCard.number);
       return {
         name: catalogCard.name,
         number: catalogCard.number,
         rarity: catalogCard.rarity,
         rarityLabel: RARITY_LABELS[catalogCard.rarity] || catalogCard.rarity,
-        imageSmall: apiCard?.images?.small || null,
-        imageLarge: apiCard?.images?.large || null,
-        marketPrice,
-        priceLow,
-        priceHigh,
-        priceVariant,
-        types: apiCard?.types || [],
-        supertype: apiCard?.supertype || null,
-        subtypes: apiCard?.subtypes || [],
-        hp: apiCard?.hp || null,
-        // eBay data will be added by enrichWithEbayData
+        imageSmall: db?.imageSmall || null,
+        imageLarge: db?.imageLarge || null,
+        marketPrice: db?.marketPrice ? Number(db.marketPrice) : null,
+        priceLow: db?.priceLow ? Number(db.priceLow) : null,
+        priceHigh: db?.priceHigh ? Number(db.priceHigh) : null,
+        priceVariant: db?.priceVariant || null,
+        types: db?.types || [],
+        supertype: db?.supertype || null,
+        subtypes: db?.subtypes || [],
+        hp: db?.hp || null,
         ebayListingCount: 0,
         bestEbayPrice: null,
       };
     });
 
-    const setData = {
+    // 8. Enrich with live eBay data
+    const enrichedCards = await enrichWithEbayData(cards, catalogSet.name);
+
+    res.json({
       name: catalogSet.name,
       code: catalogSet.code,
       era: catalogSet.era,
@@ -158,15 +219,8 @@ router.get('/:setCode', async (req, res) => {
       setSymbol: apiSet?.images?.symbol || null,
       releaseDate: apiSet?.releaseDate || null,
       series: apiSet?.series || null,
-      cards,
-    };
-
-    // Cache before enriching with eBay data (eBay data changes more frequently)
-    setDataCache.set(cacheKey, { data: setData, timestamp: Date.now() });
-
-    // Enrich with live eBay listing counts
-    const enrichedCards = await enrichWithEbayData(cards, catalogSet.name);
-    res.json({ ...setData, cards: enrichedCards });
+      cards: enrichedCards,
+    });
   } catch (error) {
     console.error(`[Sets] Error fetching set "${catalogSet.name}":`, error.message);
     // Fallback: return catalog data without images
@@ -207,7 +261,6 @@ router.get('/:setCode', async (req, res) => {
  */
 async function enrichWithEbayData(cards, setName) {
   try {
-    // Get all active listings that match this set's card names
     const cardNames = [...new Set(cards.map(c => c.name))];
     const listings = await prisma.ebayListing.findMany({
       where: {
@@ -221,7 +274,6 @@ async function enrichWithEbayData(cards, setName) {
       },
     });
 
-    // Build a map: cardName → { count, bestPrice }
     const ebayMap = new Map();
     for (const listing of listings) {
       const key = listing.cardName;
@@ -250,7 +302,7 @@ async function enrichWithEbayData(cards, setName) {
 }
 
 /**
- * Pick the best price variant based on rarity (same logic as pokemonTcg.js).
+ * Pick the best price variant based on rarity.
  */
 function pickBestVariant(prices, rarity) {
   const variants = Object.keys(prices);
