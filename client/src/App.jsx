@@ -6,6 +6,7 @@ import SavedDealsPage from './pages/SavedDealsPage';
 import SnipeWatchlistPage from './pages/SnipeWatchlistPage';
 import SellerIntelPage from './pages/SellerIntelPage';
 import MarketAlertsPage from './pages/MarketAlertsPage';
+import SetBrowserPage from './pages/SetBrowserPage';
 
 export default function App() {
   return (
@@ -18,6 +19,8 @@ export default function App() {
           <Route path="/snipe" element={<SnipeWatchlistPage />} />
           <Route path="/sellers" element={<SellerIntelPage />} />
           <Route path="/market" element={<MarketAlertsPage />} />
+          <Route path="/sets" element={<SetBrowserPage />} />
+          <Route path="/sets/:setCode" element={<SetBrowserPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

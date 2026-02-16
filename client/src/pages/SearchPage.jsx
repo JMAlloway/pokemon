@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import SearchForm from '../components/SearchForm';
 import ListingCard from '../components/ListingCard';
 import SearchLoadingAnimation from '../components/SearchLoadingAnimation';
@@ -8,6 +9,25 @@ export default function SearchPage() {
   const { listings, recentSoldListings, isSearching, error, cached, cacheTimestamp, baseline, baselineSource, recencyScore, sampleSize, search, clearResults } = useSearchStore();
   const [sortBy, setSortBy] = useState('dealScore');
   const [filterType, setFilterType] = useState('all'); // 'all', 'bin', 'auction'
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoSearched = useRef(false);
+
+  // Read initial values from URL query params (set by Set Browser click-to-search)
+  const initialValues = {
+    cardName: searchParams.get('cardName') || '',
+    set: searchParams.get('set') || '',
+    rarity: searchParams.get('rarity') || '',
+  };
+
+  // Auto-search when navigated from set browser with params
+  useEffect(() => {
+    if (initialValues.cardName && !autoSearched.current && !isSearching) {
+      autoSearched.current = true;
+      search(initialValues).catch(() => {});
+      // Clear params so a page refresh doesn't re-trigger
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = async (params) => {
     try {
@@ -52,7 +72,7 @@ export default function SearchPage() {
         </p>
       </div>
 
-      <SearchForm onSearch={handleSearch} isSearching={isSearching} />
+      <SearchForm onSearch={handleSearch} isSearching={isSearching} initialValues={initialValues} />
 
       {/* Error */}
       {error && (
