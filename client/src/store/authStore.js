@@ -35,20 +35,30 @@ const useAuthStore = create((set, get) => ({
 
   login: async (email, password) => {
     set({ error: null });
-    const data = await api.post('/api/auth/login', { email, password });
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    set({ user: data.user, error: null });
-    return data.user;
+    try {
+      const data = await api.post('/api/auth/login', { email, password });
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      set({ user: data.user, error: null });
+      return data.user;
+    } catch (error) {
+      set({ error: error.message });
+      throw error;
+    }
   },
 
   register: async (username, email, password) => {
     set({ error: null });
-    const data = await api.post('/api/auth/register', { username, email, password });
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    set({ user: data.user, error: null });
-    return data.user;
+    try {
+      const data = await api.post('/api/auth/register', { username, email, password });
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      set({ user: data.user, error: null });
+      return data.user;
+    } catch (error) {
+      set({ error: error.message });
+      throw error;
+    }
   },
 
   logout: () => {

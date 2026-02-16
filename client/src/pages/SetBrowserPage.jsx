@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
 
@@ -21,7 +21,7 @@ function SetHeader({ setData }) {
   const cardsWithPrice = setData.cards.filter(c => c.marketPrice);
   const totalMarketValue = cardsWithPrice.reduce((sum, c) => sum + c.marketPrice, 0);
   const avgPrice = cardsWithPrice.length > 0 ? totalMarketValue / cardsWithPrice.length : 0;
-  const highestCard = cardsWithPrice.sort((a, b) => b.marketPrice - a.marketPrice)[0];
+  const highestCard = [...cardsWithPrice].sort((a, b) => b.marketPrice - a.marketPrice)[0];
   const totalEbayListings = setData.cards.reduce((sum, c) => sum + c.ebayListingCount, 0);
 
   return (
@@ -547,6 +547,7 @@ export default function SetBrowserPage() {
   const [layout, setLayout] = useState('grid'); // grid, binder
   const [binderSpread, setBinderSpread] = useState(0);
   const [gridCols, setGridCols] = useState(0); // 0 = auto (responsive)
+  const totalSpreadsRef = useRef(0);
 
   // If no setCode, fetch set list
   useEffect(() => {
@@ -563,8 +564,7 @@ export default function SetBrowserPage() {
     if (!setCode) return;
     setLoading(true);
     setError(null);
-    fetch(`/api/sets/${setCode}`, { signal: AbortSignal.timeout(60000) })
-      .then(r => r.json())
+    api.get(`/api/sets/${setCode}`)
       .then(data => { setSetData(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [setCode]);
@@ -586,7 +586,7 @@ export default function SetBrowserPage() {
         setBinderSpread(prev => Math.max(0, prev - 1));
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setBinderSpread(prev => Math.min(prev + 1, prev + 1));
+        setBinderSpread(prev => Math.min(prev + 1, Math.max(0, totalSpreadsRef.current - 1)));
       }
     };
     document.addEventListener('keydown', handleKeyDown);
@@ -703,6 +703,7 @@ export default function SetBrowserPage() {
       binderSpreads.push(displayCards.slice(i, i + 18));
     }
     if (binderSpreads.length === 0) binderSpreads.push([]);
+    totalSpreadsRef.current = binderSpreads.length;
   }
   const currentSpreadIndex = Math.min(binderSpread, Math.max(0, binderSpreads.length - 1));
 

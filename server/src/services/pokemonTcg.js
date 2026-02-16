@@ -56,6 +56,16 @@ const CARD_TYPES = ['V', 'VMAX', 'VSTAR', 'ex', 'EX', 'GX', 'Tag Team', 'BREAK',
 
 let pokemonTcgCache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const CACHE_MAX_SIZE = 500;
+
+function cachePut(cache, key, value, maxSize = CACHE_MAX_SIZE) {
+  if (cache.size >= maxSize) {
+    // Evict oldest entry (first key in Map insertion order)
+    const firstKey = cache.keys().next().value;
+    cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
 
 /**
  * Validate if a card name exists in Pokemon TCG database.
@@ -119,7 +129,7 @@ export async function validateCardName(cardName) {
           name: data.data[0].name,
           suggestions: data.data.map(c => c.name).slice(0, 5)
         };
-        pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+        cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
         return result;
       }
     }
@@ -132,7 +142,7 @@ export async function validateCardName(cardName) {
     const topScore = similarityScore(cardName, suggestions[0]);
     if (topScore >= 80) {
       const result = { valid: true, name: suggestions[0], suggestions };
-      pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
       return result;
     }
   }
@@ -146,7 +156,7 @@ export async function validateCardName(cardName) {
       : 'Card not found in Pokemon database. Please check the spelling.'
   };
 
-  pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+  cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
   return result;
 }
 
@@ -232,7 +242,7 @@ export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity })
     return result;
   } catch (err) {
     console.warn(`[TCGPlayer] Aborted: ${err.message} — falling through to eBay`);
-    pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+    cachePut(pokemonTcgCache, cacheKey, { data: null, timestamp: Date.now() });
     return null;
   }
 }
@@ -339,7 +349,7 @@ async function _fetchTcgPlayerPriceInner({ cardName, set, cardNumber, rarity, ca
       };
 
       console.log(`[TCGPlayer] Found via ${label}: ${card.name} (${card.set?.name}) ${variant}: market=$${result.market}`);
-      pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
       return result;
     } catch (err) {
       console.warn(`[TCGPlayer] ${label} failed:`, err.message);
@@ -348,7 +358,7 @@ async function _fetchTcgPlayerPriceInner({ cardName, set, cardNumber, rarity, ca
   }
 
   console.log(`[TCGPlayer] All queries exhausted for "${baseName}" — no pricing found`);
-  pokemonTcgCache.set(cacheKey, { data: null, timestamp: Date.now() });
+  cachePut(pokemonTcgCache, cacheKey, { data: null, timestamp: Date.now() });
   return null;
 }
 
@@ -406,7 +416,7 @@ async function resolveSetId(setName, headers = {}) {
       const match = exactMatch || containsMatch || codeMatch || data.data[0];
 
       console.log(`[TCGPlayer] Resolved set "${setName}" → id="${match.id}" (API name: "${match.name}")`);
-      setIdCache.set(cacheKey, { data: match.id, timestamp: Date.now() });
+      cachePut(setIdCache, cacheKey, { data: match.id, timestamp: Date.now() }, 200);
       return match.id;
     } catch (err) {
       console.warn(`[TCGPlayer] Set resolve failed for "${sq}":`, err.message);
@@ -415,7 +425,7 @@ async function resolveSetId(setName, headers = {}) {
   }
 
   console.log(`[TCGPlayer] Could not resolve set: "${setName}"`);
-  setIdCache.set(cacheKey, { data: null, timestamp: Date.now() });
+  cachePut(setIdCache, cacheKey, { data: null, timestamp: Date.now() }, 200);
   return null;
 }
 

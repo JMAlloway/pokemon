@@ -19,6 +19,15 @@ const SETS_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 // Cache for individual card pricing
 const priceCache = new Map();
 const PRICE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const PRICE_CACHE_MAX_SIZE = 500;
+
+function cachePut(cache, key, value, maxSize = PRICE_CACHE_MAX_SIZE) {
+  if (cache.size >= maxSize) {
+    const firstKey = cache.keys().next().value;
+    cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
 
 /**
  * Fetch all TCGdex sets and cache them.
@@ -84,11 +93,11 @@ export async function fetchTcgdexPrice({ cardName, set, cardNumber, rarity }) {
 
   try {
     const result = await _fetchTcgdexPriceInner({ cardName, set, number, rarity });
-    priceCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    cachePut(priceCache, cacheKey, { data: result, timestamp: Date.now() });
     return result;
   } catch (err) {
     console.warn(`[TCGdex] Price fetch failed:`, err.message);
-    priceCache.set(cacheKey, { data: null, timestamp: Date.now() });
+    cachePut(priceCache, cacheKey, { data: null, timestamp: Date.now() });
     return null;
   }
 }

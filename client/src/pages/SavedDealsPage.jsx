@@ -33,7 +33,7 @@ export default function SavedDealsPage() {
     }
   };
 
-  const activeDeals = deals.filter(d => d.status === 'active' || statusFilter === 'all');
+  const activeDeals = deals.filter(d => statusFilter === 'all' || d.status === statusFilter);
   const priceDrops = activeDeals.filter(d => d.priceChangePercent && Number(d.priceChangePercent) < 0).length;
   const priceIncreases = activeDeals.filter(d => d.priceChangePercent && Number(d.priceChangePercent) > 0).length;
 
