@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../db.js';
 import CARD_CATALOG, { RARITY_LABELS, RARITY_ORDER } from '../data/cardCatalog.js';
+import { fetchTcgdexPrice } from '../services/tcgdex.js';
 
 const router = Router();
 
@@ -210,7 +211,16 @@ router.get('/:setCode', async (req, res) => {
       };
     });
 
-    // 8. Enrich with live eBay data
+    // 8. Enrich cards missing market prices via TCGdex (runs in background, doesn't block response)
+    const cardsNeedingPrice = finalDbCards.filter(c => !c.marketPrice);
+    if (cardsNeedingPrice.length > 0) {
+      console.log(`[Sets] ${cardsNeedingPrice.length} cards missing prices — fetching from TCGdex in background`);
+      enrichWithTcgdexPrices(catalogSet, cardsNeedingPrice).catch(err =>
+        console.warn(`[Sets] TCGdex background price fetch failed:`, err.message)
+      );
+    }
+
+    // 9. Enrich with live eBay data
     const enrichedCards = await enrichWithEbayData(cards, catalogSet.name);
 
     res.json({
@@ -258,6 +268,44 @@ router.get('/:setCode', async (req, res) => {
     });
   }
 });
+
+/**
+ * Fetch prices from TCGdex for cards missing market data and store in DB.
+ * Runs in the background — doesn't block the response.
+ * Prices will appear on the next page load.
+ */
+async function enrichWithTcgdexPrices(catalogSet, dbCardsNeedingPrice) {
+  let updated = 0;
+  for (const dbCard of dbCardsNeedingPrice) {
+    try {
+      const result = await fetchTcgdexPrice({
+        cardName: dbCard.cardName,
+        set: catalogSet.name,
+        cardNumber: `${dbCard.cardNumber}/${catalogSet.printedTotal}`,
+        rarity: dbCard.rarity,
+      });
+
+      if (result?.market) {
+        await prisma.setCard.update({
+          where: { setCode_cardNumber: { setCode: dbCard.setCode, cardNumber: dbCard.cardNumber } },
+          data: {
+            marketPrice: result.market,
+            priceLow: result.low,
+            priceHigh: result.high,
+            priceVariant: result.variant,
+            priceUpdatedAt: new Date(),
+          },
+        });
+        updated++;
+      }
+    } catch {
+      // Skip individual card failures
+    }
+  }
+  if (updated > 0) {
+    console.log(`[Sets] TCGdex: updated prices for ${updated}/${dbCardsNeedingPrice.length} cards in "${catalogSet.name}"`);
+  }
+}
 
 /**
  * Enrich cards with active eBay listing counts and best prices from our DB.

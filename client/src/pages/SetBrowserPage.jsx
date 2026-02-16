@@ -85,12 +85,61 @@ function Stat({ label, value, sub }) {
   );
 }
 
-function CardTile({ card, onSearch }) {
+function CardTile({ card, onSearch, layout }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const hasImage = card.imageLarge || card.imageSmall;
   const priceDiff = card.marketPrice && card.bestEbayPrice
     ? ((card.bestEbayPrice - card.marketPrice) / card.marketPrice * 100)
     : null;
+
+  const isBinder = layout === 'binder';
+
+  if (isBinder) {
+    return (
+      <div
+        className="group cursor-pointer"
+        onClick={() => onSearch(card)}
+        title={`${card.name} #${card.number}${card.marketPrice ? ` — $${card.marketPrice.toFixed(2)}` : ''}`}
+      >
+        <div className="relative aspect-[5/7] bg-bg-tertiary rounded overflow-hidden">
+          {hasImage ? (
+            <>
+              {!imageLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-border border-t-accent rounded-full animate-spin" />
+                </div>
+              )}
+              <img
+                src={card.imageLarge || card.imageSmall}
+                alt={`${card.name} #${card.number}`}
+                className={`w-full h-full object-contain transition-all duration-200 group-hover:scale-105 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                loading="lazy"
+                onLoad={() => setImageLoaded(true)}
+              />
+            </>
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-text-muted">
+              <span className="text-[9px] text-center px-1">{card.name}</span>
+            </div>
+          )}
+
+          {/* Price overlay on hover */}
+          {card.marketPrice && (
+            <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] font-bold text-center py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              ${card.marketPrice.toFixed(2)}
+            </div>
+          )}
+
+          {/* Deal indicator */}
+          {priceDiff !== null && priceDiff < -10 && (
+            <span className="absolute top-0.5 right-0.5 text-[8px] font-bold px-1 py-0.5 rounded bg-deal-green/90 text-white">
+              {priceDiff.toFixed(0)}%
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -230,6 +279,51 @@ function RarityFilter({ selected, onChange, rarityCounts }) {
   );
 }
 
+function LayoutToggle({ layout, onChange }) {
+  return (
+    <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-0.5">
+      <button
+        onClick={() => onChange('grid')}
+        className={`p-1.5 rounded transition-colors ${layout === 'grid' ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary'}`}
+        title="Card grid"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+        </svg>
+      </button>
+      <button
+        onClick={() => onChange('binder')}
+        className={`p-1.5 rounded transition-colors ${layout === 'binder' ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary'}`}
+        title="Binder layout (3x3)"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.5h16.5M3.75 4.5v15h16.5v-15M7.5 8.25h.008v.008H7.5V8.25zm0 4h.008v.008H7.5v-.008zm0 4h.008v.008H7.5v-.008zm4.5-8h.008v.008H12V8.25zm0 4h.008v.008H12v-.008zm0 4h.008v.008H12v-.008zm4.5-8h.008v.008h-.008V8.25zm0 4h.008v.008h-.008v-.008zm0 4h.008v.008h-.008v-.008z" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function BinderPage({ cards, pageIndex, onSearch }) {
+  return (
+    <div className="bg-bg-card border border-border rounded-xl p-4 sm:p-6">
+      {/* Page number */}
+      <div className="text-[10px] text-text-muted text-center mb-3">Page {pageIndex + 1}</div>
+
+      {/* 3x3 grid */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 max-w-md mx-auto">
+        {cards.map((card, i) => (
+          <CardTile key={`${card.number}-${i}`} card={card} onSearch={onSearch} layout="binder" />
+        ))}
+        {/* Fill empty slots */}
+        {Array.from({ length: Math.max(0, 9 - cards.length) }).map((_, i) => (
+          <div key={`empty-${i}`} className="aspect-[5/7] bg-bg-tertiary/50 rounded border border-border/30" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SetBrowserPage() {
   const { setCode } = useParams();
   const navigate = useNavigate();
@@ -239,6 +333,8 @@ export default function SetBrowserPage() {
   const [rarityFilter, setRarityFilter] = useState(null);
   const [sortBy, setSortBy] = useState('number'); // number, priceHigh, priceLow, name
   const [sets, setSets] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [layout, setLayout] = useState('grid'); // grid, binder
 
   // If no setCode, fetch set list
   useEffect(() => {
@@ -259,6 +355,13 @@ export default function SetBrowserPage() {
       .then(r => r.json())
       .then(data => { setSetData(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
+  }, [setCode]);
+
+  // Reset filters when changing sets
+  useEffect(() => {
+    setSearchQuery('');
+    setRarityFilter(null);
+    setSortBy('number');
   }, [setCode]);
 
   const handleSearchCard = (card) => {
@@ -328,11 +431,22 @@ export default function SetBrowserPage() {
     rarityCounts[card.rarity] = (rarityCounts[card.rarity] || 0) + 1;
   }
 
-  // Filter and sort cards
-  let displayCards = rarityFilter
-    ? setData.cards.filter(c => c.rarity === rarityFilter)
-    : [...setData.cards];
+  // Filter cards
+  let displayCards = [...setData.cards];
 
+  if (rarityFilter) {
+    displayCards = displayCards.filter(c => c.rarity === rarityFilter);
+  }
+
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    displayCards = displayCards.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.number.includes(q)
+    );
+  }
+
+  // Sort cards
   displayCards.sort((a, b) => {
     switch (sortBy) {
       case 'priceHigh':
@@ -347,38 +461,95 @@ export default function SetBrowserPage() {
     }
   });
 
+  // Binder pages (9 cards per page)
+  const binderPages = [];
+  if (layout === 'binder') {
+    for (let i = 0; i < displayCards.length; i += 9) {
+      binderPages.push(displayCards.slice(i, i + 9));
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto p-6">
       <SetHeader setData={setData} />
 
       {/* Controls */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+      <div className="flex flex-col gap-3 mb-4">
+        {/* Top row: rarity filter */}
         <RarityFilter selected={rarityFilter} onChange={setRarityFilter} rarityCounts={rarityCounts} />
-        <select
-          value={sortBy}
-          onChange={e => setSortBy(e.target.value)}
-          className="text-xs bg-bg-tertiary border border-border rounded-lg px-3 py-1.5 text-text-primary"
-        >
-          <option value="number">Sort by #</option>
-          <option value="priceHigh">Price: High → Low</option>
-          <option value="priceLow">Price: Low → High</option>
-          <option value="name">Name A–Z</option>
-        </select>
+
+        {/* Bottom row: search, sort, layout */}
+        <div className="flex items-center gap-3">
+          {/* Search input */}
+          <div className="relative flex-1 max-w-xs">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Filter by name or number..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full text-xs bg-bg-tertiary border border-border rounded-lg pl-8 pr-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            className="text-xs bg-bg-tertiary border border-border rounded-lg px-3 py-1.5 text-text-primary"
+          >
+            <option value="number">Sort by #</option>
+            <option value="priceHigh">Price: High → Low</option>
+            <option value="priceLow">Price: Low → High</option>
+            <option value="name">Name A–Z</option>
+          </select>
+
+          <LayoutToggle layout={layout} onChange={setLayout} />
+        </div>
       </div>
 
-      {/* Card grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-        {displayCards.map(card => (
-          <CardTile
-            key={`${card.number}-${card.rarity}`}
-            card={card}
-            onSearch={handleSearchCard}
-          />
-        ))}
-      </div>
+      {/* Filtered count */}
+      {(searchQuery || rarityFilter) && (
+        <p className="text-xs text-text-muted mb-3">
+          Showing {displayCards.length} of {setData.cards.length} cards
+        </p>
+      )}
+
+      {/* Card display */}
+      {layout === 'binder' ? (
+        <div className="space-y-6">
+          {binderPages.map((pageCards, i) => (
+            <BinderPage key={i} cards={pageCards} pageIndex={i} onSearch={handleSearchCard} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          {displayCards.map(card => (
+            <CardTile
+              key={`${card.number}-${card.rarity}`}
+              card={card}
+              onSearch={handleSearchCard}
+              layout="grid"
+            />
+          ))}
+        </div>
+      )}
 
       {displayCards.length === 0 && (
-        <p className="text-center text-text-muted py-10">No cards match the selected filter.</p>
+        <p className="text-center text-text-muted py-10">
+          {searchQuery ? `No cards matching "${searchQuery}"` : 'No cards match the selected filter.'}
+        </p>
       )}
     </div>
   );
