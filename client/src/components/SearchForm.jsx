@@ -60,6 +60,7 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
   const [graded, setGraded] = useState(initialValues.graded || '');
   const [language, setLanguage] = useState(initialValues.language || '');
   const [manualMode, setManualMode] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Catalog state
   const [catalog, setCatalog] = useState(null);
@@ -85,7 +86,6 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
     api.get('/api/search/catalog')
       .then(data => setCatalog(data))
       .catch(() => {
-        // Fall back to manual mode if catalog unavailable
         setManualMode(true);
       });
   }, []);
@@ -121,7 +121,6 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filter sets based on query
   const filteredSets = useMemo(() => {
     if (!catalog?.sets) return [];
     if (!setQuery.trim()) return catalog.sets;
@@ -131,7 +130,6 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
     );
   }, [catalog, setQuery]);
 
-  // Cards for the selected set, grouped by rarity
   const groupedCards = useMemo(() => {
     if (!selectedSet) return {};
     let cards = selectedSet.cards;
@@ -149,7 +147,6 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
     return groups;
   }, [selectedSet, cardQuery]);
 
-  // Sorted rarity keys for display
   const sortedRarityKeys = useMemo(() => {
     return RARITY_DISPLAY_ORDER.filter(r => groupedCards[r]?.length > 0);
   }, [groupedCards]);
@@ -163,7 +160,6 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
     setSet(setObj.name);
     setSetQuery(setObj.name);
     setShowSetDropdown(false);
-    // Reset card selection
     setCardName('');
     setCardQuery('');
     setRarity('');
@@ -208,28 +204,31 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
     inputRef.current?.focus();
   };
 
-  const inputClasses = "w-full bg-bg-tertiary border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent focus:ring-1 focus:ring-accent outline-none";
+  const hasActiveFilters = condition || graded || language;
+
+  const inputClasses = "w-full bg-bg-tertiary border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-colors";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       {/* Mode toggle */}
-      <div className="flex items-center gap-2 text-xs">
+      <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-0.5 w-fit">
         <button
           type="button"
           onClick={() => { setManualMode(false); handleClearSet(); }}
-          className={`px-2 py-1 rounded transition-colors ${!manualMode ? 'bg-accent text-white' : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'}`}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${!manualMode ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
         >
           Browse Catalog
         </button>
         <button
           type="button"
           onClick={() => { setManualMode(true); setCardName(''); setSet(''); setRarity(''); }}
-          className={`px-2 py-1 rounded transition-colors ${manualMode ? 'bg-accent text-white' : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'}`}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${manualMode ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
         >
           Manual Search
         </button>
       </div>
 
+      {/* Main row */}
       <div className="flex gap-3 items-end flex-wrap">
         {!manualMode ? (
           <>
@@ -263,17 +262,19 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
                   <button
                     type="button"
                     onClick={handleClearSet}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary text-xs"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary p-0.5 rounded transition-colors"
                     title="Clear"
                   >
-                    x
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 )}
               </div>
               {showSetDropdown && filteredSets.length > 0 && (
                 <div
                   ref={setDropdownRef}
-                  className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 max-h-64 overflow-y-auto"
+                  className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 max-h-64 overflow-y-auto animate-[fadeIn_100ms_ease-out]"
                 >
                   {filteredSets.map((s, i) => (
                     <button
@@ -292,7 +293,7 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
               )}
             </div>
 
-            {/* Card picker (grouped by rarity) */}
+            {/* Card picker */}
             <div className="relative flex-1 min-w-[240px]">
               <label className="block text-xs font-medium text-text-secondary mb-1">
                 Card *
@@ -304,7 +305,6 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
                 onChange={(e) => {
                   setCardQuery(e.target.value);
                   setShowCardDropdown(true);
-                  // Clear card selection if user edits
                   if (cardName) {
                     setCardName('');
                     setRarity('');
@@ -312,14 +312,14 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
                 }}
                 onFocus={() => setShowCardDropdown(true)}
                 placeholder={selectedSet ? `Search ${selectedSet.name} cards...` : 'Select a set first'}
-                className={inputClasses}
+                className={`${inputClasses} ${!selectedSet ? 'opacity-60 cursor-not-allowed' : ''}`}
                 disabled={!selectedSet}
                 autoComplete="off"
               />
               {showCardDropdown && selectedSet && sortedRarityKeys.length > 0 && (
                 <div
                   ref={cardDropdownRef}
-                  className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 max-h-72 overflow-y-auto"
+                  className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 max-h-72 overflow-y-auto animate-[fadeIn_100ms_ease-out]"
                 >
                   <div className="px-3 py-1.5 text-xs text-text-muted border-b border-border">
                     {totalFilteredCards} card{totalFilteredCards !== 1 ? 's' : ''}{selectedSet?.printedTotal ? ` (set base: ${parseInt(selectedSet.printedTotal, 10)})` : ''}
@@ -376,7 +376,7 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
               {showSuggestions && suggestions.length > 0 && (
                 <div
                   ref={suggestionsRef}
-                  className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"
+                  className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto animate-[fadeIn_100ms_ease-out]"
                   role="listbox"
                 >
                   {suggestions.map((name, i) => (
@@ -429,62 +429,11 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
           </select>
         </div>
 
-        {/* Condition */}
-        <div className="w-36">
-          <label htmlFor="condition" className="block text-xs font-medium text-text-secondary mb-1">
-            Condition
-          </label>
-          <select
-            id="condition"
-            value={condition}
-            onChange={(e) => setCondition(e.target.value)}
-            className={inputClasses}
-          >
-            {CONDITION_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Graded */}
-        <div className="w-36">
-          <label htmlFor="graded" className="block text-xs font-medium text-text-secondary mb-1">
-            Graded
-          </label>
-          <select
-            id="graded"
-            value={graded}
-            onChange={(e) => setGraded(e.target.value)}
-            className={inputClasses}
-          >
-            {GRADED_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Language */}
-        <div className="w-36">
-          <label htmlFor="language" className="block text-xs font-medium text-text-secondary mb-1">
-            Language
-          </label>
-          <select
-            id="language"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            className={inputClasses}
-          >
-            {LANGUAGE_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-
         {/* Search button */}
         <button
           type="submit"
           disabled={isSearching || !cardName.trim()}
-          className="px-6 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          className="px-6 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shadow-sm shadow-accent/20 hover:shadow-md hover:shadow-accent/30"
         >
           {isSearching && (
             <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -494,6 +443,85 @@ export default function SearchForm({ onSearch, isSearching, initialValues = {} }
           )}
           {isSearching ? 'Searching...' : 'Search'}
         </button>
+      </div>
+
+      {/* Advanced filters toggle */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+        >
+          <svg
+            className={`w-3 h-3 transition-transform duration-200 ${showAdvanced ? 'rotate-90' : ''}`}
+            fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+          More filters
+          {hasActiveFilters && (
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+          )}
+        </button>
+
+        {showAdvanced && (
+          <div className="flex gap-3 mt-2 flex-wrap animate-[fadeInUp_150ms_ease-out]">
+            <div className="w-36">
+              <label htmlFor="condition" className="block text-xs font-medium text-text-secondary mb-1">
+                Condition
+              </label>
+              <select
+                id="condition"
+                value={condition}
+                onChange={(e) => setCondition(e.target.value)}
+                className={inputClasses}
+              >
+                {CONDITION_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="w-36">
+              <label htmlFor="graded" className="block text-xs font-medium text-text-secondary mb-1">
+                Graded
+              </label>
+              <select
+                id="graded"
+                value={graded}
+                onChange={(e) => setGraded(e.target.value)}
+                className={inputClasses}
+              >
+                {GRADED_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="w-36">
+              <label htmlFor="language" className="block text-xs font-medium text-text-secondary mb-1">
+                Language
+              </label>
+              <select
+                id="language"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className={inputClasses}
+              >
+                {LANGUAGE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => { setCondition(''); setGraded(''); setLanguage(''); }}
+                className="self-end text-xs px-2 py-2 text-text-muted hover:text-error transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Selection summary */}

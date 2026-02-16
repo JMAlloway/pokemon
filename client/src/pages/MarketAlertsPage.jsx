@@ -4,7 +4,7 @@ import useMarketStore from '../store/marketStore';
 function AlertCard({ alert }) {
   const isUp = alert.direction === 'up';
   return (
-    <div className="bg-bg-card border border-border rounded-lg p-4">
+    <div className="bg-bg-card border border-border rounded-lg p-4 hover:border-border-bright transition-all duration-200 cursor-pointer group">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">{alert.cardName}</h3>
@@ -25,8 +25,8 @@ function AlertCard({ alert }) {
         }`}>
           Price {isUp ? 'increase' : 'drop'}
         </span>
-        <span className="text-xs text-text-muted">
-          {alert.snapshotCount} data points
+        <span className="text-xs text-text-muted group-hover:text-text-secondary transition-colors">
+          {alert.snapshotCount} data points · View history
         </span>
       </div>
     </div>
@@ -120,7 +120,7 @@ export default function MarketAlertsPage() {
   const priceSpikes = alerts.filter(a => a.direction === 'up');
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-text-primary mb-1">Market Alerts</h2>
         <p className="text-sm text-text-secondary">
@@ -135,7 +135,7 @@ export default function MarketAlertsPage() {
           <select
             value={threshold}
             onChange={(e) => setThreshold(Number(e.target.value))}
-            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded px-2 py-1"
+            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded-lg px-2 py-1.5 focus:border-accent outline-none transition-colors"
           >
             <option value={5}>5%</option>
             <option value={10}>10%</option>
@@ -149,7 +149,7 @@ export default function MarketAlertsPage() {
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
-            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded px-2 py-1"
+            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded-lg px-2 py-1.5 focus:border-accent outline-none transition-colors"
           >
             <option value={3}>3 days</option>
             <option value={7}>1 week</option>
@@ -176,10 +176,14 @@ export default function MarketAlertsPage() {
 
       {/* No data */}
       {total === 0 && !isLoading && !error && (
-        <div className="mt-16 text-center">
-          <div className="text-4xl mb-3 opacity-50">&#x1F4C8;</div>
-          <p className="text-text-secondary">No significant price movements detected.</p>
-          <p className="text-sm text-text-muted mt-1">
+        <div className="mt-16 text-center animate-[fadeInUp_300ms_ease-out]">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
+            <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
+            </svg>
+          </div>
+          <p className="text-text-secondary font-medium">No significant price movements detected.</p>
+          <p className="text-sm text-text-muted mt-2">
             Run searches regularly to build price history. Alerts appear when a card's price shifts more than {threshold}% over {days} days.
           </p>
         </div>

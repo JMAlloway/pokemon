@@ -590,8 +590,11 @@ export default function SetBrowserPage() {
   // Set list view
   if (!setCode) {
     return (
-      <div className="max-w-5xl mx-auto p-6">
-        <h1 className="text-2xl font-bold text-text-primary mb-6">Set Browser</h1>
+      <div className="max-w-5xl mx-auto p-4 sm:p-6">
+        <div className="mb-6">
+          <h1 className="text-xl font-bold text-text-primary mb-1">Set Browser</h1>
+          <p className="text-sm text-text-secondary">Browse all Pokemon TCG sets and find deals on individual cards.</p>
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-2 border-border border-t-accent rounded-full animate-spin" />
@@ -604,12 +607,15 @@ export default function SetBrowserPage() {
               <button
                 key={s.code}
                 onClick={() => navigate(`/sets/${s.code}`)}
-                className="bg-bg-card border border-border rounded-lg p-4 text-left hover:border-border-bright transition-colors"
+                className="group bg-bg-card border border-border rounded-lg p-4 text-left hover:border-border-bright hover:shadow-lg hover:shadow-accent/[0.03] transition-all duration-200"
               >
-                <h3 className="text-sm font-semibold text-text-primary">{s.name}</h3>
+                <h3 className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors">{s.name}</h3>
                 <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
                   <span>{s.era}</span>
                   <span>{s.cardCount} cards</span>
+                  <svg className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-text-muted" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
                 </div>
               </button>
             ))}
@@ -684,8 +690,35 @@ export default function SetBrowserPage() {
   }
   const currentSpreadIndex = Math.min(binderSpread, Math.max(0, binderSpreads.length - 1));
 
+  // Keyboard navigation for binder
+  useEffect(() => {
+    if (layout !== 'binder') return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setBinderSpread(prev => Math.max(0, prev - 1));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setBinderSpread(prev => Math.min(prev + 1, binderSpreads.length - 1));
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [layout, binderSpreads.length]);
+
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6">
+      {/* Back button */}
+      <button
+        onClick={() => navigate('/sets')}
+        className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-accent mb-4 transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+        </svg>
+        All Sets
+      </button>
+
       <SetHeader setData={setData} />
 
       {/* Controls */}
@@ -722,7 +755,7 @@ export default function SetBrowserPage() {
           <select
             value={sortBy}
             onChange={e => setSortBy(e.target.value)}
-            className="text-xs bg-bg-tertiary border border-border rounded-lg px-3 py-1.5 text-text-primary"
+            className="text-xs bg-bg-tertiary border border-border rounded-lg px-3 py-1.5 text-text-primary focus:border-accent outline-none transition-colors"
           >
             <option value="number">Sort by #</option>
             <option value="priceHigh">Price: High → Low</option>

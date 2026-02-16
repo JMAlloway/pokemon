@@ -38,7 +38,7 @@ export default function SavedDealsPage() {
   const priceIncreases = activeDeals.filter(d => d.priceChangePercent && Number(d.priceChangePercent) > 0).length;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-text-primary">Saved Deals</h2>
         <p className="text-sm text-text-secondary mt-0.5">
@@ -118,9 +118,14 @@ export default function SavedDealsPage() {
       {isLoading && deals.length === 0 ? (
         <div className="text-center py-16 text-text-muted text-sm">Loading saved deals...</div>
       ) : activeDeals.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-text-muted text-sm">No active saved deals.</p>
-          <p className="text-xs text-text-muted mt-1">Run a new search to find deals.</p>
+        <div className="text-center py-16 animate-[fadeInUp_300ms_ease-out]">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
+            <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+            </svg>
+          </div>
+          <p className="text-text-secondary font-medium">No saved deals yet.</p>
+          <p className="text-xs text-text-muted mt-2">Save deals from search results to track their prices here.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -254,8 +259,8 @@ export default function SavedDealsPage() {
       {/* Remove confirmation */}
       {removeConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setRemoveConfirm(null)} />
-          <div className="relative bg-bg-secondary border border-border rounded-xl p-6 max-w-sm w-full">
+          <div className="absolute inset-0 bg-black/60 animate-[fadeIn_150ms_ease-out]" onClick={() => setRemoveConfirm(null)} />
+          <div className="relative bg-bg-secondary border border-border rounded-xl p-6 max-w-sm w-full mx-4 animate-[scaleIn_200ms_ease-out]">
             <h3 className="text-lg font-bold text-text-primary mb-2">Remove from saved deals?</h3>
             <p className="text-sm text-text-secondary mb-4">
               This deal will be removed from your saved deals list.

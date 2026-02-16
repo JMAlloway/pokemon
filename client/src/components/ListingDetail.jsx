@@ -24,6 +24,12 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
     loadDetails();
   }, [listing.ebayListingId, listing.searchQueryId]);
 
+  // Lock body scroll when drawer is open
+  useEffect(() => {
+    document.body.classList.add('no-scroll');
+    return () => document.body.classList.remove('no-scroll');
+  }, []);
+
   useEffect(() => {
     const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleEsc);
@@ -49,14 +55,14 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" role="dialog" aria-modal="true" aria-label="Listing details">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-xl h-full bg-bg-secondary border-l border-border overflow-y-auto">
+      <div className="absolute inset-0 bg-black/60 animate-[fadeIn_200ms_ease-out]" onClick={onClose} />
+      <div className="relative w-full max-w-xl h-full bg-bg-secondary border-l border-border overflow-y-auto animate-[slideInRight_250ms_ease-out]">
         {/* Header */}
-        <div className="sticky top-0 bg-bg-secondary border-b border-border p-4 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-bg-secondary/90 backdrop-blur-md border-b border-border p-4 flex items-center justify-between z-10">
           <h2 className="text-lg font-bold text-text-primary truncate pr-4">{listing.cardName}</h2>
           <button
             onClick={onClose}
-            className="shrink-0 p-1.5 rounded-md hover:bg-bg-tertiary text-text-secondary"
+            className="shrink-0 p-2 rounded-lg hover:bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors"
             aria-label="Close details"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -68,13 +74,13 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
         <div className="p-4 space-y-6">
           {/* Images */}
           {listing.images && listing.images.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory">
               {listing.images.map((img, i) => (
                 <img
                   key={i}
                   src={img}
                   alt={`${listing.cardName} image ${i + 1}`}
-                  className="w-40 h-56 object-cover rounded-lg bg-bg-tertiary shrink-0"
+                  className="w-40 h-56 object-cover rounded-lg bg-bg-tertiary shrink-0 snap-center"
                   loading="lazy"
                 />
               ))}
@@ -82,7 +88,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
           )}
 
           {/* Score and flags */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <DealScoreBadge score={listing.dealScore} size="lg" />
             <TypoBadge hasTypo={listing.hasTypo} details={listing.typoDetails} confidence={listing.typoConfidenceScore} />
             {gap !== null && (
@@ -109,7 +115,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                     </div>
                     <div className="w-full h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all ${c.points > 0 ? 'bg-accent' : 'bg-bg-tertiary'}`}
+                        className={`h-full rounded-full transition-all duration-500 ${c.points > 0 ? 'bg-accent' : 'bg-bg-tertiary'}`}
                         style={{ width: `${(c.points / c.max) * 100}%` }}
                       />
                     </div>
@@ -164,7 +170,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
               </div>
               {listing.bidCount !== null && listing.bidCount <= 2 && gap !== null && gap > 10 && (
                 <p className="text-xs text-deal-green mt-2 font-medium">
-                  Low competition with below-market price — potential opportunity
+                  Low competition with below-market price
                 </p>
               )}
               {listing.bidCount !== null && listing.bidCount > 8 && (
@@ -243,12 +249,12 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                 Recent Sold Comps ({soldComps.filter(s => !s.isOutlier).length})
                 {soldComps.some(s => s.isOutlier) && (
                   <span className="font-normal normal-case tracking-normal ml-1">
-                    · {soldComps.filter(s => s.isOutlier).length} outlier{soldComps.filter(s => s.isOutlier).length > 1 ? 's' : ''} excluded
+                    {soldComps.filter(s => s.isOutlier).length} outlier{soldComps.filter(s => s.isOutlier).length > 1 ? 's' : ''} excluded
                   </span>
                 )}
                 {soldComps.some(s => s.source === 'eBay-active-estimate') && (
                   <span className="font-normal normal-case tracking-normal ml-1 text-typo-amber">
-                    · estimates from active listings
+                    estimates from active listings
                   </span>
                 )}
               </h4>
@@ -318,24 +324,32 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-2 pb-4">
             <a
               href={listing.listingUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 text-center py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover transition-colors"
+              className="flex-1 text-center py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover transition-colors flex items-center justify-center gap-2"
             >
               View on eBay
+              <svg className="w-4 h-4 opacity-70" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
             </a>
             <button
               onClick={onSave}
               disabled={saveStatus === 'saved' || saveStatus === 'saving'}
-              className={`flex-1 py-2.5 rounded-lg font-medium transition-colors ${
+              className={`flex-1 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
                 saveStatus === 'saved'
                   ? 'bg-deal-green/15 text-deal-green cursor-default'
                   : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
               }`}
             >
+              {saveStatus === 'saved' && (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                </svg>
+              )}
               {saveStatus === 'saved' ? 'Saved to Deals' : saveStatus === 'saving' ? 'Saving...' : 'Save to Deals'}
             </button>
           </div>

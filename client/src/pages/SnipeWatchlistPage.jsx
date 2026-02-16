@@ -101,22 +101,19 @@ function AuctionSection({ title, subtitle, auctions, color }) {
 
 export default function SnipeWatchlistPage() {
   const { urgent, soon, upcoming, total, isLoading, error, filters, fetchWatchlist, setFilters } = useSnipeStore();
-  const [maxHours, setMaxHours] = useState(filters.maxHours);
-  const [maxBids, setMaxBids] = useState(filters.maxBids);
 
   useEffect(() => {
     fetchWatchlist(filters);
-    // Auto-refresh every 60 seconds
     const interval = setInterval(() => fetchWatchlist(filters), 60000);
     return () => clearInterval(interval);
   }, [fetchWatchlist, filters]);
 
-  const handleApplyFilters = () => {
-    setFilters({ maxHours, maxBids });
+  const handleFilterChange = (key, value) => {
+    setFilters({ ...filters, [key]: value });
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-text-primary mb-1">Snipe Watchlist</h2>
         <p className="text-sm text-text-secondary">
@@ -129,9 +126,9 @@ export default function SnipeWatchlistPage() {
         <div className="flex items-center gap-2">
           <label className="text-xs text-text-muted">Ending within</label>
           <select
-            value={maxHours}
-            onChange={(e) => setMaxHours(Number(e.target.value))}
-            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded px-2 py-1"
+            value={filters.maxHours}
+            onChange={(e) => handleFilterChange('maxHours', Number(e.target.value))}
+            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded-lg px-2 py-1.5 focus:border-accent outline-none transition-colors"
           >
             <option value={1}>1 hour</option>
             <option value={3}>3 hours</option>
@@ -144,9 +141,9 @@ export default function SnipeWatchlistPage() {
         <div className="flex items-center gap-2">
           <label className="text-xs text-text-muted">Max bids</label>
           <select
-            value={maxBids}
-            onChange={(e) => setMaxBids(Number(e.target.value))}
-            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded px-2 py-1"
+            value={filters.maxBids}
+            onChange={(e) => handleFilterChange('maxBids', Number(e.target.value))}
+            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded-lg px-2 py-1.5 focus:border-accent outline-none transition-colors"
           >
             <option value={0}>0 (no bids)</option>
             <option value={2}>2 or fewer</option>
@@ -155,14 +152,11 @@ export default function SnipeWatchlistPage() {
             <option value={100}>Any</option>
           </select>
         </div>
-        <button
-          onClick={handleApplyFilters}
-          className="text-xs px-3 py-1 rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25 transition-colors"
-        >
-          Apply
-        </button>
         {isLoading && (
-          <span className="text-xs text-text-muted ml-auto">Refreshing...</span>
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="w-3 h-3 border-2 border-border border-t-accent rounded-full animate-spin" />
+            <span className="text-xs text-text-muted">Refreshing...</span>
+          </div>
         )}
       </div>
 
@@ -175,10 +169,14 @@ export default function SnipeWatchlistPage() {
 
       {/* Results */}
       {total === 0 && !isLoading && !error && (
-        <div className="mt-16 text-center">
-          <div className="text-4xl mb-3 opacity-50">&#x1F3AF;</div>
-          <p className="text-text-secondary">No sniping opportunities right now.</p>
-          <p className="text-sm text-text-muted mt-1">
+        <div className="mt-16 text-center animate-[fadeInUp_300ms_ease-out]">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
+            <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-text-secondary font-medium">No sniping opportunities right now.</p>
+          <p className="text-sm text-text-muted mt-2">
             Run some searches first to populate auction data, then check back here.
           </p>
         </div>

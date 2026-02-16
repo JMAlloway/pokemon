@@ -143,7 +143,7 @@ export default function SellerIntelPage() {
 
   if (selectedSeller) {
     return (
-      <div className="p-6 max-w-6xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto">
         <SellerDetail
           seller={selectedSeller}
           listings={sellerListings}
@@ -154,7 +154,7 @@ export default function SellerIntelPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-text-primary mb-1">Seller Intelligence</h2>
         <p className="text-sm text-text-secondary">
@@ -169,7 +169,7 @@ export default function SellerIntelPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded px-2 py-1"
+            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded-lg px-2 py-1.5 focus:border-accent outline-none transition-colors"
           >
             <option value="deals">Most deals</option>
             <option value="score">Avg deal score</option>
@@ -182,7 +182,7 @@ export default function SellerIntelPage() {
           <select
             value={minDeals}
             onChange={(e) => setMinDeals(Number(e.target.value))}
-            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded px-2 py-1"
+            className="text-xs bg-bg-tertiary text-text-primary border border-border rounded-lg px-2 py-1.5 focus:border-accent outline-none transition-colors"
           >
             <option value={0}>Any</option>
             <option value={1}>1+</option>
@@ -205,10 +205,14 @@ export default function SellerIntelPage() {
 
       {/* Sellers list */}
       {total === 0 && !isLoading && !error && (
-        <div className="mt-16 text-center">
-          <div className="text-4xl mb-3 opacity-50">&#x1F575;&#xFE0F;</div>
-          <p className="text-text-secondary">No seller data yet.</p>
-          <p className="text-sm text-text-muted mt-1">
+        <div className="mt-16 text-center animate-[fadeInUp_300ms_ease-out]">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
+            <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+            </svg>
+          </div>
+          <p className="text-text-secondary font-medium">No seller data yet.</p>
+          <p className="text-sm text-text-muted mt-2">
             Run some searches to start building seller intelligence.
           </p>
         </div>

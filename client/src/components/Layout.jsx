@@ -1,15 +1,24 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import useSavedDealsStore from '../store/savedDealsStore';
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 export default function Layout() {
   const { notifications, fetchDeals } = useSavedDealsStore();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+  const mainRef = useRef(null);
 
   useEffect(() => {
     fetchDeals();
     const interval = setInterval(() => fetchDeals(), 60000);
     return () => clearInterval(interval);
   }, [fetchDeals]);
+
+  // Scroll to top and close mobile menu on route change
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const navLinks = [
     { to: '/', label: 'Search', icon: 'M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z' },
@@ -23,18 +32,20 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="bg-bg-secondary border-b border-border px-6 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-8">
+      <header className="bg-bg-secondary/80 backdrop-blur-md border-b border-border px-4 sm:px-6 py-3 flex items-center justify-between shrink-0 sticky top-0 z-40">
+        <div className="flex items-center gap-4 sm:gap-8">
           <h1 className="text-lg font-bold tracking-tight text-text-primary">
             <span className="text-accent">Poke</span>Arb
           </h1>
-          <nav className="flex gap-1" role="navigation" aria-label="Main navigation">
+
+          {/* Desktop nav */}
+          <nav className="hidden md:flex gap-1" role="navigation" aria-label="Main navigation">
             {navLinks.map(link => (
               <NavLink
                 key={link.to}
                 to={link.to}
                 className={({ isActive }) =>
-                  `flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  `relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                     isActive
                       ? 'bg-accent/15 text-accent'
                       : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
@@ -47,7 +58,7 @@ export default function Layout() {
                 </svg>
                 {link.label}
                 {link.to === '/saved-deals' && notifications.length > 0 && (
-                  <span className="bg-error text-white text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                  <span className="absolute -top-1 -right-1 bg-error text-white text-[10px] rounded-full w-[18px] h-[18px] flex items-center justify-center font-bold animate-[pulse_2s_ease-in-out_infinite]">
                     {notifications.length}
                   </span>
                 )}
@@ -55,8 +66,70 @@ export default function Layout() {
             ))}
           </nav>
         </div>
+
+        {/* Mobile menu button */}
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="md:hidden p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+          aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          )}
+          {/* Mobile notification dot */}
+          {!mobileMenuOpen && notifications.length > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full" />
+          )}
+        </button>
       </header>
-      <main className="flex-1 overflow-auto">
+
+      {/* Mobile nav overlay */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 top-[57px] z-30 animate-[fadeIn_150ms_ease-out]">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
+          <nav
+            className="relative bg-bg-secondary border-b border-border shadow-xl animate-[fadeInUp_200ms_ease-out]"
+            role="navigation"
+            aria-label="Mobile navigation"
+          >
+            <div className="p-2 space-y-0.5">
+              {navLinks.map(link => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-accent/15 text-accent'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
+                    }`
+                  }
+                  end={link.to === '/'}
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d={link.icon} />
+                  </svg>
+                  {link.label}
+                  {link.to === '/saved-deals' && notifications.length > 0 && (
+                    <span className="bg-error text-white text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center font-bold ml-auto">
+                      {notifications.length}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          </nav>
+        </div>
+      )}
+
+      <main ref={mainRef} className="flex-1 overflow-auto">
         <Outlet />
       </main>
     </div>
