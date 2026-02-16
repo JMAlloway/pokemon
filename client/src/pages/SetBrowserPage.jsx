@@ -577,6 +577,22 @@ export default function SetBrowserPage() {
     setBinderSpread(0);
   }, [setCode]);
 
+  // Keyboard navigation for binder
+  useEffect(() => {
+    if (layout !== 'binder') return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setBinderSpread(prev => Math.max(0, prev - 1));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setBinderSpread(prev => Math.min(prev + 1, prev + 1));
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [layout]);
+
   const handleSearchCard = (card) => {
     // Navigate to search page with card pre-filled
     const params = new URLSearchParams({
@@ -689,22 +705,6 @@ export default function SetBrowserPage() {
     if (binderSpreads.length === 0) binderSpreads.push([]);
   }
   const currentSpreadIndex = Math.min(binderSpread, Math.max(0, binderSpreads.length - 1));
-
-  // Keyboard navigation for binder
-  useEffect(() => {
-    if (layout !== 'binder') return;
-    const handleKeyDown = (e) => {
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setBinderSpread(prev => Math.max(0, prev - 1));
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        setBinderSpread(prev => Math.min(prev + 1, binderSpreads.length - 1));
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [layout, binderSpreads.length]);
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6">
