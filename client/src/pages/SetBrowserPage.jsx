@@ -304,22 +304,199 @@ function LayoutToggle({ layout, onChange }) {
   );
 }
 
-function BinderPage({ cards, pageIndex, onSearch }) {
-  return (
-    <div className="bg-bg-card border border-border rounded-xl p-4 sm:p-6">
-      {/* Page number */}
-      <div className="text-[10px] text-text-muted text-center mb-3">Page {pageIndex + 1}</div>
+function BinderSlot({ card, onSearch }) {
+  const [imageLoaded, setImageLoaded] = useState(false);
 
-      {/* 3x3 grid */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3 max-w-md mx-auto">
-        {cards.map((card, i) => (
-          <CardTile key={`${card.number}-${i}`} card={card} onSearch={onSearch} layout="binder" />
-        ))}
-        {/* Fill empty slots */}
-        {Array.from({ length: Math.max(0, 9 - cards.length) }).map((_, i) => (
-          <div key={`empty-${i}`} className="aspect-[5/7] bg-bg-tertiary/50 rounded border border-border/30" />
-        ))}
+  if (!card) {
+    return (
+      <div className="aspect-[5/7] rounded-sm bg-black/20 border border-white/5 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent" />
       </div>
+    );
+  }
+
+  const hasImage = card.imageLarge || card.imageSmall;
+
+  return (
+    <div
+      className="group aspect-[5/7] rounded-sm relative overflow-hidden cursor-pointer"
+      onClick={() => onSearch(card)}
+      title={`${card.name} #${card.number}${card.marketPrice ? ` — $${card.marketPrice.toFixed(2)}` : ''}`}
+    >
+      {/* Sleeve background */}
+      <div className="absolute inset-0 bg-black/30 border border-white/[0.08] rounded-sm" />
+
+      {/* Card image */}
+      {hasImage ? (
+        <>
+          {!imageLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center z-10">
+              <div className="w-5 h-5 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+            </div>
+          )}
+          <img
+            src={card.imageLarge || card.imageSmall}
+            alt={card.name}
+            className={`absolute inset-[2px] w-[calc(100%-4px)] h-[calc(100%-4px)] object-contain transition-all duration-200 group-hover:scale-[1.03] ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            loading="lazy"
+            onLoad={() => setImageLoaded(true)}
+          />
+        </>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[8px] text-white/30 text-center px-1">{card.name}</span>
+        </div>
+      )}
+
+      {/* Sleeve glare effect */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.08] via-transparent to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-tl from-white/[0.03] via-transparent to-transparent pointer-events-none" />
+
+      {/* Hover price tooltip */}
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-center">
+        <div className="translate-y-full group-hover:translate-y-0 transition-transform duration-200 pb-1.5 text-center">
+          {card.marketPrice && (
+            <span className="text-[10px] font-bold text-white drop-shadow-lg">${card.marketPrice.toFixed(2)}</span>
+          )}
+          <p className="text-[8px] text-white/70 truncate max-w-full px-1">{card.name}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BinderPageSingle({ cards, pageNum, side, onSearch }) {
+  const slots = [...cards];
+  while (slots.length < 9) slots.push(null);
+
+  return (
+    <div className={`relative flex-1 ${side === 'left' ? 'rounded-l-lg' : 'rounded-r-lg'}`}>
+      {/* Page surface */}
+      <div
+        className={`
+          h-full p-3 sm:p-4
+          ${side === 'left'
+            ? 'bg-gradient-to-r from-zinc-800/90 via-zinc-800/80 to-zinc-800/70 rounded-l-lg border-l border-t border-b border-white/[0.06]'
+            : 'bg-gradient-to-l from-zinc-800/90 via-zinc-800/80 to-zinc-800/70 rounded-r-lg border-r border-t border-b border-white/[0.06]'
+          }
+        `}
+      >
+        {/* Page number */}
+        <div className={`text-[9px] text-white/20 mb-2 ${side === 'left' ? 'text-left' : 'text-right'}`}>
+          {pageNum}
+        </div>
+
+        {/* 3x3 card grid */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+          {slots.map((card, i) => (
+            <BinderSlot key={card ? `${card.number}-${i}` : `empty-${i}`} card={card} onSearch={onSearch} />
+          ))}
+        </div>
+      </div>
+
+      {/* Inner shadow for page depth */}
+      {side === 'left' && (
+        <div className="absolute top-0 right-0 bottom-0 w-4 bg-gradient-to-l from-black/20 to-transparent pointer-events-none" />
+      )}
+      {side === 'right' && (
+        <div className="absolute top-0 left-0 bottom-0 w-4 bg-gradient-to-r from-black/20 to-transparent pointer-events-none" />
+      )}
+    </div>
+  );
+}
+
+function BinderSpread({ leftCards, rightCards, spreadIndex, totalSpreads, onSearch, onNavigate }) {
+  const leftPageNum = spreadIndex * 2 + 1;
+  const rightPageNum = spreadIndex * 2 + 2;
+
+  return (
+    <div>
+      {/* Binder navigation */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={() => onNavigate(spreadIndex - 1)}
+          disabled={spreadIndex === 0}
+          className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+          Prev
+        </button>
+
+        <span className="text-[10px] text-text-muted">
+          Pages {leftPageNum}–{rightPageNum} of {totalSpreads * 2}
+        </span>
+
+        <button
+          onClick={() => onNavigate(spreadIndex + 1)}
+          disabled={spreadIndex >= totalSpreads - 1}
+          className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          Next
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Open binder */}
+      <div className="relative max-w-3xl mx-auto">
+        {/* Binder cover shadow */}
+        <div className="absolute -inset-2 bg-gradient-to-b from-black/30 via-black/10 to-black/30 rounded-xl blur-sm -z-10" />
+
+        {/* Two-page spread */}
+        <div className="flex">
+          {/* Left page */}
+          <BinderPageSingle
+            cards={leftCards}
+            pageNum={leftPageNum}
+            side="left"
+            onSearch={onSearch}
+          />
+
+          {/* Spine / binding */}
+          <div className="relative w-5 sm:w-7 bg-zinc-900 flex flex-col items-center justify-evenly py-6 shrink-0 z-10">
+            {/* Ring holes */}
+            {[0, 1, 2].map(i => (
+              <div key={i} className="relative">
+                <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border-2 border-zinc-600 bg-zinc-800" />
+                <div className="absolute inset-0 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-gradient-to-br from-zinc-500/30 to-transparent" />
+              </div>
+            ))}
+
+            {/* Spine shadow */}
+            <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-r from-black/40 to-transparent" />
+            <div className="absolute top-0 right-0 bottom-0 w-1 bg-gradient-to-l from-black/40 to-transparent" />
+          </div>
+
+          {/* Right page */}
+          <BinderPageSingle
+            cards={rightCards}
+            pageNum={rightPageNum}
+            side="right"
+            onSearch={onSearch}
+          />
+        </div>
+      </div>
+
+      {/* Page dots */}
+      {totalSpreads > 1 && (
+        <div className="flex items-center justify-center gap-1.5 mt-4">
+          {Array.from({ length: totalSpreads }).map((_, i) => (
+            <button
+              key={i}
+              onClick={() => onNavigate(i)}
+              className={`w-2 h-2 rounded-full transition-all ${
+                i === spreadIndex
+                  ? 'bg-accent w-4'
+                  : 'bg-border hover:bg-text-muted'
+              }`}
+              title={`Pages ${i * 2 + 1}–${i * 2 + 2}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -335,6 +512,7 @@ export default function SetBrowserPage() {
   const [sets, setSets] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [layout, setLayout] = useState('grid'); // grid, binder
+  const [binderSpread, setBinderSpread] = useState(0);
 
   // If no setCode, fetch set list
   useEffect(() => {
@@ -362,6 +540,7 @@ export default function SetBrowserPage() {
     setSearchQuery('');
     setRarityFilter(null);
     setSortBy('number');
+    setBinderSpread(0);
   }, [setCode]);
 
   const handleSearchCard = (card) => {
@@ -461,13 +640,15 @@ export default function SetBrowserPage() {
     }
   });
 
-  // Binder pages (9 cards per page)
-  const binderPages = [];
+  // Binder spreads (18 cards per spread = two 3x3 pages)
+  const binderSpreads = [];
   if (layout === 'binder') {
-    for (let i = 0; i < displayCards.length; i += 9) {
-      binderPages.push(displayCards.slice(i, i + 9));
+    for (let i = 0; i < displayCards.length; i += 18) {
+      binderSpreads.push(displayCards.slice(i, i + 18));
     }
+    if (binderSpreads.length === 0) binderSpreads.push([]);
   }
+  const currentSpreadIndex = Math.min(binderSpread, Math.max(0, binderSpreads.length - 1));
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -528,11 +709,14 @@ export default function SetBrowserPage() {
 
       {/* Card display */}
       {layout === 'binder' ? (
-        <div className="space-y-6">
-          {binderPages.map((pageCards, i) => (
-            <BinderPage key={i} cards={pageCards} pageIndex={i} onSearch={handleSearchCard} />
-          ))}
-        </div>
+        <BinderSpread
+          leftCards={binderSpreads[currentSpreadIndex]?.slice(0, 9) || []}
+          rightCards={binderSpreads[currentSpreadIndex]?.slice(9, 18) || []}
+          spreadIndex={currentSpreadIndex}
+          totalSpreads={binderSpreads.length}
+          onSearch={handleSearchCard}
+          onNavigate={(i) => setBinderSpread(Math.max(0, Math.min(i, binderSpreads.length - 1)))}
+        />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {displayCards.map(card => (
