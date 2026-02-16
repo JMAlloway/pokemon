@@ -304,6 +304,39 @@ function LayoutToggle({ layout, onChange }) {
   );
 }
 
+function GridColsSelector({ gridCols, onChange }) {
+  const options = [
+    { value: 0, label: 'Auto' },
+    { value: 2, label: '2' },
+    { value: 3, label: '3' },
+    { value: 4, label: '4' },
+    { value: 5, label: '5' },
+    { value: 6, label: '6' },
+    { value: 8, label: '8' },
+  ];
+
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[10px] text-text-muted mr-1">Cols</span>
+      <div className="flex items-center gap-0.5 bg-bg-tertiary rounded-lg p-0.5">
+        {options.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            className={`text-[11px] font-medium px-2 py-1 rounded transition-colors ${
+              gridCols === opt.value
+                ? 'bg-accent/15 text-accent'
+                : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BinderSlot({ card, onSearch }) {
   const [imageLoaded, setImageLoaded] = useState(false);
 
@@ -354,11 +387,11 @@ function BinderSlot({ card, onSearch }) {
 
       {/* Hover price tooltip */}
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-center">
-        <div className="translate-y-full group-hover:translate-y-0 transition-transform duration-200 pb-1.5 text-center">
+        <div className="translate-y-full group-hover:translate-y-0 transition-transform duration-200 pb-2 text-center">
           {card.marketPrice && (
-            <span className="text-[10px] font-bold text-white drop-shadow-lg">${card.marketPrice.toFixed(2)}</span>
+            <span className="text-xs font-bold text-white drop-shadow-lg">${card.marketPrice.toFixed(2)}</span>
           )}
-          <p className="text-[8px] text-white/70 truncate max-w-full px-1">{card.name}</p>
+          <p className="text-[10px] text-white/70 truncate max-w-full px-1">{card.name}</p>
         </div>
       </div>
     </div>
@@ -374,7 +407,7 @@ function BinderPageSingle({ cards, pageNum, side, onSearch }) {
       {/* Page surface */}
       <div
         className={`
-          h-full p-3 sm:p-4
+          h-full p-4 sm:p-5 md:p-6
           ${side === 'left'
             ? 'bg-gradient-to-r from-zinc-800/90 via-zinc-800/80 to-zinc-800/70 rounded-l-lg border-l border-t border-b border-white/[0.06]'
             : 'bg-gradient-to-l from-zinc-800/90 via-zinc-800/80 to-zinc-800/70 rounded-r-lg border-r border-t border-b border-white/[0.06]'
@@ -382,12 +415,12 @@ function BinderPageSingle({ cards, pageNum, side, onSearch }) {
         `}
       >
         {/* Page number */}
-        <div className={`text-[9px] text-white/20 mb-2 ${side === 'left' ? 'text-left' : 'text-right'}`}>
+        <div className={`text-[10px] text-white/20 mb-2 ${side === 'left' ? 'text-left' : 'text-right'}`}>
           {pageNum}
         </div>
 
         {/* 3x3 card grid */}
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {slots.map((card, i) => (
             <BinderSlot key={card ? `${card.number}-${i}` : `empty-${i}`} card={card} onSearch={onSearch} />
           ))}
@@ -441,7 +474,7 @@ function BinderSpread({ leftCards, rightCards, spreadIndex, totalSpreads, onSear
       </div>
 
       {/* Open binder */}
-      <div className="relative max-w-3xl mx-auto">
+      <div className="relative max-w-6xl mx-auto">
         {/* Binder cover shadow */}
         <div className="absolute -inset-2 bg-gradient-to-b from-black/30 via-black/10 to-black/30 rounded-xl blur-sm -z-10" />
 
@@ -456,12 +489,12 @@ function BinderSpread({ leftCards, rightCards, spreadIndex, totalSpreads, onSear
           />
 
           {/* Spine / binding */}
-          <div className="relative w-5 sm:w-7 bg-zinc-900 flex flex-col items-center justify-evenly py-6 shrink-0 z-10">
+          <div className="relative w-6 sm:w-8 md:w-10 bg-zinc-900 flex flex-col items-center justify-evenly py-6 shrink-0 z-10">
             {/* Ring holes */}
             {[0, 1, 2].map(i => (
               <div key={i} className="relative">
-                <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border-2 border-zinc-600 bg-zinc-800" />
-                <div className="absolute inset-0 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-gradient-to-br from-zinc-500/30 to-transparent" />
+                <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border-2 border-zinc-600 bg-zinc-800" />
+                <div className="absolute inset-0 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-gradient-to-br from-zinc-500/30 to-transparent" />
               </div>
             ))}
 
@@ -513,6 +546,7 @@ export default function SetBrowserPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [layout, setLayout] = useState('grid'); // grid, binder
   const [binderSpread, setBinderSpread] = useState(0);
+  const [gridCols, setGridCols] = useState(0); // 0 = auto (responsive)
 
   // If no setCode, fetch set list
   useEffect(() => {
@@ -697,6 +731,9 @@ export default function SetBrowserPage() {
           </select>
 
           <LayoutToggle layout={layout} onChange={setLayout} />
+          {layout === 'grid' && (
+            <GridColsSelector gridCols={gridCols} onChange={setGridCols} />
+          )}
         </div>
       </div>
 
@@ -718,7 +755,13 @@ export default function SetBrowserPage() {
           onNavigate={(i) => setBinderSpread(Math.max(0, Math.min(i, binderSpreads.length - 1)))}
         />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div
+          className={gridCols === 0
+            ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
+            : 'grid gap-3'
+          }
+          style={gridCols > 0 ? { gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` } : undefined}
+        >
           {displayCards.map(card => (
             <CardTile
               key={`${card.number}-${card.rarity}`}
