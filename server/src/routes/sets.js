@@ -84,14 +84,26 @@ router.get('/:setCode', async (req, res) => {
     let apiCards = [];
     if (apiSetId) {
       console.log(`[Sets] Resolved "${catalogSet.name}" → pokemontcg.io set "${apiSetId}"`);
-      // Fetch all cards with images + pricing (pageSize=250 covers most sets)
-      const url = `${POKEMON_TCG_API_BASE}/cards?q=set.id:"${apiSetId}"&pageSize=250&select=name,number,rarity,images,tcgplayer,types,supertype,subtypes,hp`;
-      const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
-      if (response.ok) {
-        const data = await response.json();
-        apiCards = data.data || [];
-        console.log(`[Sets] Fetched ${apiCards.length} cards from pokemontcg.io for "${catalogSet.name}"`);
+      // Fetch all cards with images + pricing, with pagination support
+      let page = 1;
+      const pageSize = 250;
+      let hasMore = true;
+      while (hasMore) {
+        try {
+          const url = `${POKEMON_TCG_API_BASE}/cards?q=set.id:"${apiSetId}"&page=${page}&pageSize=${pageSize}&select=name,number,rarity,images,tcgplayer,types,supertype,subtypes,hp`;
+          const response = await fetch(url, { headers, signal: AbortSignal.timeout(45000) });
+          if (!response.ok) break;
+          const data = await response.json();
+          const cards = data.data || [];
+          apiCards.push(...cards);
+          hasMore = cards.length === pageSize;
+          page++;
+        } catch (err) {
+          console.warn(`[Sets] Page ${page} fetch failed: ${err.message}`);
+          break;
+        }
       }
+      console.log(`[Sets] Fetched ${apiCards.length} cards from pokemontcg.io for "${catalogSet.name}"`);
     }
 
     // Merge catalog cards with API data

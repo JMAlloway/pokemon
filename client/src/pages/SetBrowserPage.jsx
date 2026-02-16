@@ -255,7 +255,8 @@ export default function SetBrowserPage() {
     if (!setCode) return;
     setLoading(true);
     setError(null);
-    api.get(`/api/sets/${setCode}`)
+    fetch(`/api/sets/${setCode}`, { signal: AbortSignal.timeout(60000) })
+      .then(r => r.json())
       .then(data => { setSetData(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [setCode]);
