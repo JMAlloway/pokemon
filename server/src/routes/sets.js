@@ -89,10 +89,13 @@ router.get('/:setCode', async (req, res) => {
 
     console.log(`[Sets] ${catalogSet.name}: ${dbCards.length} in DB, ${needsImages.length} need images, ${needsPriceRefresh.length} need price refresh`);
 
-    // 3. Resolve set metadata (for logo/symbol)
+    // 3. Resolve set metadata (for logo/symbol) — only call API if we actually need to fetch
     const apiKey = process.env.POKEMON_TCG_API_KEY;
     const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
-    const apiSet = await resolveApiSet(catalogSet.name, catalogSet.code, headers);
+    let apiSet = null;
+    if (needsApiFetch || needsPriceUpdate) {
+      apiSet = await resolveApiSet(catalogSet.name, catalogSet.code, headers);
+    }
 
     // 4. Fetch from pokemontcg.io only if we need new images or price updates
     if (needsApiFetch || needsPriceUpdate) {
