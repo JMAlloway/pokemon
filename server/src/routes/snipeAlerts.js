@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-import { isEmailConfigured } from '../services/emailService.js';
+import { isEmailConfigured, sendSnipeAlertEmail } from '../services/emailService.js';
 
 const router = Router();
 
@@ -159,6 +159,42 @@ router.get('/:id/history', async (req, res) => {
   } catch (error) {
     console.error('Failed to fetch alert history:', error);
     res.status(500).json({ error: 'Failed to fetch alert history' });
+  }
+});
+
+/**
+ * POST /api/snipe-alerts/:id/test — Send a test email for an alert.
+ * Uses a sample listing so you can verify email delivery works.
+ */
+router.post('/:id/test', async (req, res) => {
+  try {
+    const existing = await prisma.snipeAlert.findFirst({
+      where: { id: req.params.id, userId: req.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Alert not found' });
+
+    const sampleListings = [{
+      cardName: 'Test Card — Charizard ex 125/094',
+      listingTitle: '[TEST] Pokemon Charizard ex SAR 125/094 Phantasmal Flames — This is a test alert',
+      price: 42.99,
+      marketPrice: 65.00,
+      priceGapPercent: 33.9,
+      dealScore: 78,
+      listingUrl: 'https://www.ebay.com',
+      hoursRemaining: 0.5,
+      bidCount: 2
+    }];
+
+    const emailSent = await sendSnipeAlertEmail({ alert: existing, listings: sampleListings });
+
+    res.json({
+      success: true,
+      emailSent,
+      message: emailSent ? 'Test email sent — check your inbox' : 'SMTP not configured — check server console for logged output'
+    });
+  } catch (error) {
+    console.error('Failed to send test alert:', error);
+    res.status(500).json({ error: 'Failed to send test alert' });
   }
 });
 

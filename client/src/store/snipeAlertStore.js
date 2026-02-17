@@ -48,6 +48,11 @@ const useSnipeAlertStore = create((set) => ({
     }));
   },
 
+  testAlert: async (id) => {
+    const data = await api.post(`/api/snipe-alerts/${id}/test`);
+    return data;
+  },
+
   fetchHistory: async (alertId) => {
     try {
       const data = await api.get(`/api/snipe-alerts/${alertId}/history`);

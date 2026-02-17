@@ -358,10 +358,12 @@ function AlertForm({ onSubmit, onCancel, initial }) {
 
 /* ── Alerts Panel ── */
 function AlertsPanel() {
-  const { alerts, emailConfigured, isLoading, fetchAlerts, createAlert, deleteAlert, toggleAlert, fetchHistory, history } = useSnipeAlertStore();
+  const { alerts, emailConfigured, isLoading, fetchAlerts, createAlert, deleteAlert, toggleAlert, testAlert, fetchHistory, history } = useSnipeAlertStore();
   const [showForm, setShowForm] = useState(false);
   const [editingAlert, setEditingAlert] = useState(null);
   const [viewHistory, setViewHistory] = useState(null);
+  const [testingId, setTestingId] = useState(null);
+  const [testResult, setTestResult] = useState(null);
   const { updateAlert } = useSnipeAlertStore();
 
   useEffect(() => {
@@ -383,6 +385,19 @@ function AlertsPanel() {
       setEditingAlert(null);
     } catch {
       // Error handled
+    }
+  };
+
+  const handleTest = async (alert) => {
+    setTestingId(alert.id);
+    setTestResult(null);
+    try {
+      const result = await testAlert(alert.id);
+      setTestResult({ id: alert.id, ...result });
+    } catch {
+      setTestResult({ id: alert.id, success: false, message: 'Failed to send test' });
+    } finally {
+      setTestingId(null);
     }
   };
 
@@ -475,6 +490,20 @@ function AlertsPanel() {
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => handleTest(alert)}
+                  disabled={testingId === alert.id}
+                  className="text-xs px-2 py-1 rounded text-text-muted hover:text-accent transition-colors disabled:opacity-50"
+                  title="Send test email"
+                >
+                  {testingId === alert.id ? (
+                    <div className="w-4 h-4 border-2 border-border border-t-accent rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                  )}
+                </button>
                 <button onClick={() => handleViewHistory(alert)} className="text-xs px-2 py-1 rounded text-text-muted hover:text-text-primary transition-colors" title="View history">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -492,6 +521,13 @@ function AlertsPanel() {
                 </button>
               </div>
             </div>
+
+            {/* Test result */}
+            {testResult && testResult.id === alert.id && (
+              <div className={`mt-2 text-xs px-2 py-1 rounded ${testResult.emailSent ? 'bg-deal-green/10 text-deal-green' : 'bg-warning/10 text-warning'}`}>
+                {testResult.message}
+              </div>
+            )}
 
             {/* History panel */}
             {viewHistory === alert.id && (
