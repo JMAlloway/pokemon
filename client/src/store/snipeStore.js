@@ -71,16 +71,86 @@ const useSnipeStore = create((set) => ({
     }
   },
 
+  refreshProgress: null,   // { index, total, cardName, status }
+
   refreshWatchlist: async (searchIds) => {
-    set({ isRefreshing: true, refreshError: null });
-    try {
-      const data = await api.post('/api/snipe-watchlist/refresh', { searchIds });
-      set({ isRefreshing: false, lastRefreshResult: data });
-      return data;
-    } catch (error) {
-      set({ isRefreshing: false, refreshError: error.message });
-      throw error;
-    }
+    set({ isRefreshing: true, refreshError: null, refreshProgress: null });
+
+    return new Promise((resolve, reject) => {
+      const token = localStorage.getItem('token');
+      fetch('/api/snipe-watchlist/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ searchIds })
+      }).then(response => {
+        if (!response.ok) {
+          return response.json().then(err => {
+            set({ isRefreshing: false, refreshError: err.error || 'Refresh failed' });
+            reject(new Error(err.error || 'Refresh failed'));
+          });
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+
+        // If server returned JSON (validation error, empty result), handle normally
+        if (contentType.includes('application/json')) {
+          return response.json().then(data => {
+            set({ isRefreshing: false, lastRefreshResult: data, refreshProgress: null });
+            resolve(data);
+          });
+        }
+
+        // SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const processStream = () => {
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              set({ isRefreshing: false, refreshProgress: null });
+              return;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              try {
+                const event = JSON.parse(line.slice(6));
+                if (event.type === 'start') {
+                  set({ refreshProgress: { index: event.index, total: event.total, cardName: event.cardName, status: 'searching' } });
+                } else if (event.type === 'complete') {
+                  set({ refreshProgress: { index: event.index, total: event.total, cardName: event.cardName, status: 'done', listingsFound: event.listingsFound } });
+                } else if (event.type === 'error') {
+                  set({ refreshProgress: { index: event.index, total: event.total, cardName: event.cardName, status: 'error' } });
+                } else if (event.type === 'done') {
+                  set({ isRefreshing: false, lastRefreshResult: event, refreshProgress: null });
+                  resolve(event);
+                }
+              } catch {
+                // skip malformed lines
+              }
+            }
+
+            processStream();
+          }).catch(err => {
+            set({ isRefreshing: false, refreshError: err.message, refreshProgress: null });
+            reject(err);
+          });
+        };
+
+        processStream();
+      }).catch(err => {
+        set({ isRefreshing: false, refreshError: err.message, refreshProgress: null });
+        reject(err);
+      });
+    });
   },
 
   setFilters: (newFilters) => {

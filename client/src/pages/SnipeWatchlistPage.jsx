@@ -564,7 +564,7 @@ function AlertsPanel() {
 
 /* ── Main Page ── */
 export default function SnipeWatchlistPage() {
-  const { urgent, soon, upcoming, binDeals, total, isLoading, isRefreshing, lastRefreshResult, error, filters, fetchWatchlist, refreshWatchlist, setFilters, fetchFilterOptions, filterOptions, availableSearches, fetchAvailableSearches } = useSnipeStore();
+  const { urgent, soon, upcoming, binDeals, total, isLoading, isRefreshing, refreshProgress, lastRefreshResult, error, filters, fetchWatchlist, refreshWatchlist, setFilters, fetchFilterOptions, filterOptions, availableSearches, fetchAvailableSearches } = useSnipeStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState(null);
   const [showRefreshPicker, setShowRefreshPicker] = useState(false);
@@ -575,10 +575,12 @@ export default function SnipeWatchlistPage() {
   }, [fetchFilterOptions]);
 
   useEffect(() => {
-    fetchWatchlist(filters);
-    const interval = setInterval(() => fetchWatchlist(filters), 60000);
+    if (!isRefreshing) fetchWatchlist(filters);
+    const interval = setInterval(() => {
+      if (!isRefreshing) fetchWatchlist(filters);
+    }, 60000);
     return () => clearInterval(interval);
-  }, [fetchWatchlist, filters]);
+  }, [fetchWatchlist, filters, isRefreshing]);
 
   const handleFilterChange = (key, value) => {
     setFilters({ [key]: value });
@@ -695,8 +697,28 @@ export default function SnipeWatchlistPage() {
         </div>
       )}
 
+      {/* Refresh progress indicator */}
+      {isRefreshing && refreshProgress && (
+        <div className="mb-4 bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 animate-[fadeInUp_150ms_ease-out]">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3.5 h-3.5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin shrink-0" />
+            <span className="text-xs text-blue-400 font-medium">
+              Searching {refreshProgress.index}/{refreshProgress.total}: {refreshProgress.cardName}
+              {refreshProgress.status === 'done' && ` — ${refreshProgress.listingsFound} listings`}
+              {refreshProgress.status === 'error' && ' — failed'}
+            </span>
+          </div>
+          <div className="w-full bg-blue-500/10 rounded-full h-1.5">
+            <div
+              className="bg-blue-400 h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${(refreshProgress.index / refreshProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Refresh result message */}
-      {refreshMsg && (
+      {refreshMsg && !isRefreshing && (
         <div className="mb-4 bg-accent/10 border border-accent/20 rounded-lg p-3 flex items-center gap-2 animate-[fadeInUp_150ms_ease-out]">
           <svg className="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

@@ -194,68 +194,89 @@ router.get('/searches', async (req, res) => {
 });
 
 /**
- * POST /api/snipe-watchlist/refresh — Re-run selected saved searches to pull fresh eBay data.
- * Does NOT trigger snipe alert emails — only refreshes the underlying listing data.
+ * POST /api/snipe-watchlist/refresh — Re-run selected saved searches via SSE.
+ * Streams progress events so the frontend can show per-search status.
  *
- * Body: { searchIds: string[] }  — which searches to refresh (required)
+ * Body: { searchIds: string[] }
+ *
+ * SSE events:
+ *   { type: "start",    index, total, cardName }
+ *   { type: "complete", index, total, cardName, listingsFound }
+ *   { type: "error",    index, total, cardName, error }
+ *   { type: "done",     refreshed, total, listingsFound, message }
  */
 router.post('/refresh', async (req, res) => {
-  try {
-    const { searchIds } = req.body;
+  const { searchIds } = req.body;
 
-    if (!searchIds || !Array.isArray(searchIds) || searchIds.length === 0) {
-      return res.status(400).json({ error: 'Select at least one search to refresh.' });
-    }
+  if (!searchIds || !Array.isArray(searchIds) || searchIds.length === 0) {
+    return res.status(400).json({ error: 'Select at least one search to refresh.' });
+  }
+  if (searchIds.length > 5) {
+    return res.status(400).json({ error: 'Maximum 5 searches per refresh to stay within eBay rate limits.' });
+  }
 
-    if (searchIds.length > 5) {
-      return res.status(400).json({ error: 'Maximum 5 searches per refresh to stay within eBay rate limits.' });
-    }
-
-    const rl = getRateLimitStatus();
-    if (rl.isLimited) {
-      return res.status(429).json({
-        error: `Rate limit in effect. Try again in ${Math.ceil(rl.retryAfterMs / 60000)} minutes.`,
-        retryAfterMs: rl.retryAfterMs
-      });
-    }
-
-    // Only refresh searches the user owns and has selected
-    const searches = await prisma.searchQuery.findMany({
-      where: {
-        userId: req.userId,
-        id: { in: searchIds }
-      }
+  const rl = getRateLimitStatus();
+  if (rl.isLimited) {
+    return res.status(429).json({
+      error: `Rate limit in effect. Try again in ${Math.ceil(rl.retryAfterMs / 60000)} minutes.`,
+      retryAfterMs: rl.retryAfterMs
     });
+  }
 
-    if (searches.length === 0) {
-      return res.json({ refreshed: 0, message: 'No matching searches found.' });
-    }
-
-    let refreshed = 0;
-    let totalListings = 0;
-
-    for (const search of searches) {
-      try {
-        const result = await executeSearch(search);
-        if (result.success) {
-          refreshed++;
-          totalListings += result.listingsFound || 0;
-        }
-      } catch (err) {
-        console.warn(`[SnipeRefresh] Failed to refresh "${search.cardName}":`, err.message);
-      }
-    }
-
-    res.json({
-      refreshed,
-      total: searches.length,
-      listingsFound: totalListings,
-      message: `Refreshed ${refreshed}/${searches.length} searches. ${totalListings} listings updated.`
+  let searches;
+  try {
+    searches = await prisma.searchQuery.findMany({
+      where: { userId: req.userId, id: { in: searchIds } }
     });
   } catch (error) {
     console.error('Snipe watchlist refresh error:', error);
-    res.status(500).json({ error: 'Failed to refresh watchlist data' });
+    return res.status(500).json({ error: 'Failed to refresh watchlist data' });
   }
+
+  if (searches.length === 0) {
+    return res.json({ refreshed: 0, message: 'No matching searches found.' });
+  }
+
+  // Switch to SSE
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+
+  const send = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  let refreshed = 0;
+  let totalListings = 0;
+
+  for (let i = 0; i < searches.length; i++) {
+    const search = searches[i];
+    send({ type: 'start', index: i + 1, total: searches.length, cardName: search.cardName });
+
+    try {
+      const result = await executeSearch(search);
+      if (result.success) {
+        refreshed++;
+        totalListings += result.listingsFound || 0;
+      }
+      send({ type: 'complete', index: i + 1, total: searches.length, cardName: search.cardName, listingsFound: result.listingsFound || 0 });
+    } catch (err) {
+      console.warn(`[SnipeRefresh] Failed to refresh "${search.cardName}":`, err.message);
+      send({ type: 'error', index: i + 1, total: searches.length, cardName: search.cardName, error: err.message });
+    }
+  }
+
+  send({
+    type: 'done',
+    refreshed,
+    total: searches.length,
+    listingsFound: totalListings,
+    message: `Refreshed ${refreshed}/${searches.length} searches. ${totalListings} listings updated.`
+  });
+
+  res.end();
 });
 
 export default router;
