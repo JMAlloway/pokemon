@@ -16,6 +16,7 @@ model User {
   lastActiveAt DateTime       @default(now())
   savedListings SavedListing[]
   searchQueries SearchQuery[]
+  snipeAlerts   SnipeAlert[]
 }
 
 model SearchQuery {
@@ -231,6 +232,12 @@ enum JobType {
   eBaySearch
   PriceBaseline
   SavedDealsMonitoring
+  AlertCheck
+}
+
+enum AlertType {
+  AUCTION_ENDING
+  BIN_DEAL
 }
 
 enum JobStatus {
@@ -239,6 +246,48 @@ enum JobStatus {
   completed
   failed
   skipped
+}
+
+model SnipeAlert {
+  id                  String        @id @default(uuid()) @db.Uuid
+  userId              String        @db.Uuid
+  name                String        @db.VarChar(255)
+  alertType           AlertType
+  sets                String[]      @db.VarChar(100)
+  cardNames           String[]      @db.VarChar(255)
+  maxHoursRemaining   Int?          @db.SmallInt
+  maxBids             Int?          @db.SmallInt
+  minPriceGapPercent  Decimal?      @db.Decimal(5, 2)
+  maxPriceDollars     Decimal?      @db.Decimal(10, 2)
+  minDealScore        Int?          @db.SmallInt
+  enabled             Boolean       @default(true)
+  cooldownMinutes     Int           @default(60)
+  lastTriggeredAt     DateTime?
+  createdAt           DateTime      @default(now())
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertHistory        AlertHistory[]
+
+  @@index([userId])
+  @@index([enabled])
+}
+
+model AlertHistory {
+  id             String      @id @default(uuid()) @db.Uuid
+  snipeAlertId   String      @db.Uuid
+  ebayListingId  String
+  cardName       String      @db.VarChar(255)
+  listingTitle   String      @db.VarChar(500)
+  price          Decimal     @db.Decimal(10, 2)
+  marketPrice    Decimal?    @db.Decimal(10, 2)
+  priceGapPercent Decimal?   @db.Decimal(10, 2)
+  listingUrl     String
+  triggeredAt    DateTime    @default(now())
+  emailSent      Boolean     @default(false)
+  snipeAlert     SnipeAlert  @relation(fields: [snipeAlertId], references: [id], onDelete: Cascade)
+
+  @@index([snipeAlertId])
+  @@index([ebayListingId])
+  @@index([triggeredAt])
 }
 
 model SetCard {

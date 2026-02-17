@@ -5,6 +5,7 @@ import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
 import { fetchTcgPlayerPrice } from './pokemonTcg.js';
 import { fetchTcgdexPrice } from './tcgdex.js';
+import { sendSnipeAlertEmail } from './emailService.js';
 
 const runningJobs = new Map();
 let isProcessing = false;
@@ -164,6 +165,11 @@ export function initializeBackgroundJobs() {
   // Saved deals monitoring: every 30 minutes
   cron.schedule('*/30 * * * *', () => {
     monitorSavedDeals();
+  });
+
+  // Snipe alert checker: every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    checkSnipeAlerts();
   });
 
   console.log('[BackgroundJobs] Scheduled jobs initialized');
@@ -793,6 +799,156 @@ async function captureMarketSnapshot(cardName, set, baseline) {
   } catch (err) {
     console.warn(`[BackgroundJobs] Market snapshot failed for "${cardName}":`, err.message);
   }
+}
+
+/**
+ * Check all enabled snipe alerts and send emails for matching listings.
+ * Runs every 5 minutes.
+ */
+export async function checkSnipeAlerts() {
+  try {
+    const alerts = await prisma.snipeAlert.findMany({
+      where: { enabled: true }
+    });
+
+    if (alerts.length === 0) return;
+    console.log(`[AlertChecker] Checking ${alerts.length} snipe alerts`);
+
+    for (const alert of alerts) {
+      try {
+        await processAlert(alert);
+      } catch (err) {
+        console.error(`[AlertChecker] Error processing alert "${alert.name}":`, err.message);
+      }
+    }
+  } catch (error) {
+    console.error('[AlertChecker] Fatal error:', error.message);
+  }
+}
+
+async function processAlert(alert) {
+  const now = new Date();
+
+  // Build the query based on alert type
+  const where = {
+    listingStatus: 'active'
+  };
+
+  if (alert.alertType === 'AUCTION_ENDING') {
+    where.buyingOption = 'AUCTION';
+    // Auction must be ending within maxHoursRemaining
+    const maxH = alert.maxHoursRemaining || 6;
+    where.auctionEndDate = {
+      gt: now,
+      lte: new Date(Date.now() + maxH * 60 * 60 * 1000)
+    };
+    if (alert.maxBids != null) {
+      where.bidCount = { lte: alert.maxBids };
+    }
+  } else {
+    // BIN_DEAL
+    where.buyingOption = 'FIXED_PRICE';
+  }
+
+  // Price gap filter
+  if (alert.minPriceGapPercent != null) {
+    where.priceGapPercent = { gte: Number(alert.minPriceGapPercent) };
+  } else {
+    where.priceGapPercent = { gt: 0 };
+  }
+
+  // Max price filter
+  if (alert.maxPriceDollars != null) {
+    where.currentPrice = { lte: Number(alert.maxPriceDollars) };
+  }
+
+  // Deal score filter
+  if (alert.minDealScore != null) {
+    where.dealScore = { gte: alert.minDealScore };
+  }
+
+  // Set filter
+  if (alert.sets && alert.sets.length > 0) {
+    where.searchQuery = { set: { in: alert.sets } };
+  }
+
+  // Card name filter
+  if (alert.cardNames && alert.cardNames.length > 0) {
+    where.cardName = { in: alert.cardNames };
+  }
+
+  const listings = await prisma.ebayListing.findMany({
+    where,
+    orderBy: alert.alertType === 'AUCTION_ENDING'
+      ? [{ auctionEndDate: 'asc' }]
+      : [{ dealScore: 'desc' }],
+    include: {
+      searchQuery: { select: { cardName: true, set: true } }
+    },
+    take: 20
+  });
+
+  if (listings.length === 0) return;
+
+  // Filter out listings already alerted within cooldown
+  const cooldownCutoff = new Date(Date.now() - alert.cooldownMinutes * 60 * 1000);
+  const recentAlerts = await prisma.alertHistory.findMany({
+    where: {
+      snipeAlertId: alert.id,
+      triggeredAt: { gte: cooldownCutoff }
+    },
+    select: { ebayListingId: true }
+  });
+  const alertedIds = new Set(recentAlerts.map(a => a.ebayListingId));
+
+  const newListings = listings.filter(l => !alertedIds.has(l.ebayListingId));
+  if (newListings.length === 0) return;
+
+  console.log(`[AlertChecker] Alert "${alert.name}": ${newListings.length} new matches`);
+
+  // Format for email
+  const emailListings = newListings.map(l => {
+    const hoursRemaining = l.auctionEndDate
+      ? (new Date(l.auctionEndDate) - Date.now()) / (1000 * 60 * 60)
+      : null;
+    return {
+      cardName: l.cardName,
+      listingTitle: l.listingTitle,
+      price: Number(l.currentBidPrice || l.currentPrice),
+      marketPrice: l.recentSoldPrice ? Number(l.recentSoldPrice) : null,
+      priceGapPercent: l.priceGapPercent ? Number(l.priceGapPercent) : null,
+      dealScore: l.dealScore,
+      listingUrl: l.listingUrl,
+      hoursRemaining: hoursRemaining != null ? Math.round(hoursRemaining * 10) / 10 : null,
+      bidCount: l.bidCount
+    };
+  });
+
+  // Send email
+  const emailSent = await sendSnipeAlertEmail({ alert, listings: emailListings });
+
+  // Record alert history
+  for (const l of newListings) {
+    await prisma.alertHistory.create({
+      data: {
+        snipeAlertId: alert.id,
+        ebayListingId: l.ebayListingId,
+        cardName: l.cardName,
+        listingTitle: l.listingTitle,
+        price: l.currentBidPrice || l.currentPrice,
+        marketPrice: l.recentSoldPrice,
+        priceGapPercent: l.priceGapPercent,
+        listingUrl: l.listingUrl,
+        emailSent
+      }
+    });
+  }
+
+  // Update last triggered
+  await prisma.snipeAlert.update({
+    where: { id: alert.id },
+    data: { lastTriggeredAt: now }
+  });
 }
 
 /**

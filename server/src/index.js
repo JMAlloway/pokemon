@@ -16,6 +16,7 @@ import snipeWatchlistRoutes from './routes/snipeWatchlist.js';
 import sellerRoutes from './routes/sellers.js';
 import marketAlertRoutes from './routes/marketAlerts.js';
 import setRoutes from './routes/sets.js';
+import snipeAlertRoutes from './routes/snipeAlerts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,6 +108,7 @@ async function start() {
     app.use('/api/sellers', sellerRoutes);
     app.use('/api/market-alerts', marketAlertRoutes);
     app.use('/api/sets', setRoutes);
+    app.use('/api/snipe-alerts', snipeAlertRoutes);
 
     // Serve static frontend in production (after API routes so they take priority)
     const clientDistPath = path.join(__dirname, '../../client/dist');
