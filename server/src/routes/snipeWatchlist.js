@@ -162,11 +162,55 @@ router.get('/filter-options', async (req, res) => {
 });
 
 /**
- * POST /api/snipe-watchlist/refresh — Re-run all saved searches to pull fresh eBay data.
+ * GET /api/snipe-watchlist/searches — Get available saved searches for the refresh picker.
+ */
+router.get('/searches', async (req, res) => {
+  try {
+    const searches = await prisma.searchQuery.findMany({
+      where: { userId: req.userId },
+      select: {
+        id: true,
+        cardName: true,
+        set: true,
+        lastExecutedAt: true,
+        _count: { select: { ebayListings: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      searches: searches.map(s => ({
+        id: s.id,
+        cardName: s.cardName,
+        set: s.set,
+        lastExecutedAt: s.lastExecutedAt,
+        listingCount: s._count.ebayListings
+      }))
+    });
+  } catch (error) {
+    console.error('Available searches error:', error);
+    res.status(500).json({ error: 'Failed to load searches' });
+  }
+});
+
+/**
+ * POST /api/snipe-watchlist/refresh — Re-run selected saved searches to pull fresh eBay data.
  * Does NOT trigger snipe alert emails — only refreshes the underlying listing data.
+ *
+ * Body: { searchIds: string[] }  — which searches to refresh (required)
  */
 router.post('/refresh', async (req, res) => {
   try {
+    const { searchIds } = req.body;
+
+    if (!searchIds || !Array.isArray(searchIds) || searchIds.length === 0) {
+      return res.status(400).json({ error: 'Select at least one search to refresh.' });
+    }
+
+    if (searchIds.length > 5) {
+      return res.status(400).json({ error: 'Maximum 5 searches per refresh to stay within eBay rate limits.' });
+    }
+
     const rl = getRateLimitStatus();
     if (rl.isLimited) {
       return res.status(429).json({
@@ -175,21 +219,22 @@ router.post('/refresh', async (req, res) => {
       });
     }
 
-    // Get all saved searches for user (non-manual ones, or all if few exist)
+    // Only refresh searches the user owns and has selected
     const searches = await prisma.searchQuery.findMany({
-      where: { userId: req.userId }
+      where: {
+        userId: req.userId,
+        id: { in: searchIds }
+      }
     });
 
     if (searches.length === 0) {
-      return res.json({ refreshed: 0, message: 'No saved searches to refresh. Create searches first.' });
+      return res.json({ refreshed: 0, message: 'No matching searches found.' });
     }
 
-    // Limit to 5 searches per refresh to avoid hammering eBay API
-    const toRefresh = searches.slice(0, 5);
     let refreshed = 0;
     let totalListings = 0;
 
-    for (const search of toRefresh) {
+    for (const search of searches) {
       try {
         const result = await executeSearch(search);
         if (result.success) {
@@ -203,9 +248,9 @@ router.post('/refresh', async (req, res) => {
 
     res.json({
       refreshed,
-      total: toRefresh.length,
+      total: searches.length,
       listingsFound: totalListings,
-      message: `Refreshed ${refreshed}/${toRefresh.length} searches. ${totalListings} listings updated.`
+      message: `Refreshed ${refreshed}/${searches.length} searches. ${totalListings} listings updated.`
     });
   } catch (error) {
     console.error('Snipe watchlist refresh error:', error);

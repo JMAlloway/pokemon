@@ -564,9 +564,11 @@ function AlertsPanel() {
 
 /* ── Main Page ── */
 export default function SnipeWatchlistPage() {
-  const { urgent, soon, upcoming, binDeals, total, isLoading, isRefreshing, lastRefreshResult, error, filters, fetchWatchlist, refreshWatchlist, setFilters, fetchFilterOptions, filterOptions } = useSnipeStore();
+  const { urgent, soon, upcoming, binDeals, total, isLoading, isRefreshing, lastRefreshResult, error, filters, fetchWatchlist, refreshWatchlist, setFilters, fetchFilterOptions, filterOptions, availableSearches, fetchAvailableSearches } = useSnipeStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState(null);
+  const [showRefreshPicker, setShowRefreshPicker] = useState(false);
+  const [selectedSearchIds, setSelectedSearchIds] = useState([]);
 
   useEffect(() => {
     fetchFilterOptions();
@@ -594,17 +596,10 @@ export default function SnipeWatchlistPage() {
           </p>
         </div>
         <button
-          onClick={async () => {
-            setRefreshMsg(null);
-            try {
-              const result = await refreshWatchlist();
-              setRefreshMsg(result.message);
-              fetchWatchlist(filters);
-              setTimeout(() => setRefreshMsg(null), 5000);
-            } catch {
-              setRefreshMsg('Failed to refresh. Try again.');
-              setTimeout(() => setRefreshMsg(null), 4000);
-            }
+          onClick={() => {
+            fetchAvailableSearches();
+            setSelectedSearchIds([]);
+            setShowRefreshPicker(true);
           }}
           disabled={isRefreshing}
           className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition-colors font-medium disabled:opacity-50 shrink-0"
@@ -620,6 +615,85 @@ export default function SnipeWatchlistPage() {
           {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
         </button>
       </div>
+
+      {/* Refresh search picker modal */}
+      {showRefreshPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 animate-[fadeIn_150ms_ease-out]" onClick={() => setShowRefreshPicker(false)} />
+          <div className="relative bg-bg-secondary border border-border rounded-xl p-6 max-w-md w-full mx-4 animate-[scaleIn_200ms_ease-out]">
+            <h3 className="text-lg font-bold text-text-primary mb-1">Refresh Data</h3>
+            <p className="text-xs text-text-muted mb-4">Select which searches to re-run against eBay. This will NOT trigger email alerts. Max 5 at a time.</p>
+
+            {availableSearches.length === 0 ? (
+              <p className="text-sm text-text-muted py-4 text-center">No saved searches yet. Create searches first.</p>
+            ) : (
+              <div className="space-y-1 max-h-64 overflow-y-auto mb-4">
+                {availableSearches.map(s => (
+                  <label
+                    key={s.id}
+                    className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors ${
+                      selectedSearchIds.includes(s.id) ? 'bg-accent/10 border border-accent/30' : 'bg-bg-tertiary border border-transparent hover:bg-bg-card'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedSearchIds.includes(s.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          if (selectedSearchIds.length < 5) {
+                            setSelectedSearchIds([...selectedSearchIds, s.id]);
+                          }
+                        } else {
+                          setSelectedSearchIds(selectedSearchIds.filter(id => id !== s.id));
+                        }
+                      }}
+                      className="accent-accent"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-text-primary truncate">{s.cardName}</p>
+                      <p className="text-[10px] text-text-muted">
+                        {s.set || 'Any set'} · {s.listingCount} listings
+                        {s.lastExecutedAt && ` · Last run ${new Date(s.lastExecutedAt).toLocaleString()}`}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-2 border-t border-border">
+              <span className="text-xs text-text-muted">{selectedSearchIds.length}/5 selected</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowRefreshPicker(false)}
+                  className="text-xs px-4 py-2 rounded-lg bg-bg-tertiary text-text-secondary hover:text-text-primary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    setShowRefreshPicker(false);
+                    setRefreshMsg(null);
+                    try {
+                      const result = await refreshWatchlist(selectedSearchIds);
+                      setRefreshMsg(result.message);
+                      fetchWatchlist(filters);
+                      setTimeout(() => setRefreshMsg(null), 6000);
+                    } catch {
+                      setRefreshMsg('Failed to refresh. Try again.');
+                      setTimeout(() => setRefreshMsg(null), 4000);
+                    }
+                  }}
+                  disabled={selectedSearchIds.length === 0}
+                  className="text-xs px-4 py-2 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 disabled:opacity-50"
+                >
+                  Refresh ({selectedSearchIds.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Refresh result message */}
       {refreshMsg && (

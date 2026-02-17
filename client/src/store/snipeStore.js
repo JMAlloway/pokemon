@@ -60,10 +60,21 @@ const useSnipeStore = create((set) => ({
     }
   },
 
-  refreshWatchlist: async () => {
+  availableSearches: [],
+
+  fetchAvailableSearches: async () => {
+    try {
+      const data = await api.get('/api/snipe-watchlist/searches');
+      set({ availableSearches: data.searches || [] });
+    } catch {
+      // Non-critical
+    }
+  },
+
+  refreshWatchlist: async (searchIds) => {
     set({ isRefreshing: true, refreshError: null });
     try {
-      const data = await api.post('/api/snipe-watchlist/refresh');
+      const data = await api.post('/api/snipe-watchlist/refresh', { searchIds });
       set({ isRefreshing: false, lastRefreshResult: data });
       return data;
     } catch (error) {
