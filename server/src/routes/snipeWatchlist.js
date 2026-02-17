@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import prisma from '../db.js';
+import { executeSearch } from '../services/backgroundJobs.js';
+import { getRateLimitStatus } from '../services/ebayApi.js';
 
 const router = Router();
 
@@ -156,6 +158,58 @@ router.get('/filter-options', async (req, res) => {
   } catch (error) {
     console.error('Filter options error:', error);
     res.status(500).json({ error: 'Failed to load filter options' });
+  }
+});
+
+/**
+ * POST /api/snipe-watchlist/refresh — Re-run all saved searches to pull fresh eBay data.
+ * Does NOT trigger snipe alert emails — only refreshes the underlying listing data.
+ */
+router.post('/refresh', async (req, res) => {
+  try {
+    const rl = getRateLimitStatus();
+    if (rl.isLimited) {
+      return res.status(429).json({
+        error: `Rate limit in effect. Try again in ${Math.ceil(rl.retryAfterMs / 60000)} minutes.`,
+        retryAfterMs: rl.retryAfterMs
+      });
+    }
+
+    // Get all saved searches for user (non-manual ones, or all if few exist)
+    const searches = await prisma.searchQuery.findMany({
+      where: { userId: req.userId }
+    });
+
+    if (searches.length === 0) {
+      return res.json({ refreshed: 0, message: 'No saved searches to refresh. Create searches first.' });
+    }
+
+    // Limit to 5 searches per refresh to avoid hammering eBay API
+    const toRefresh = searches.slice(0, 5);
+    let refreshed = 0;
+    let totalListings = 0;
+
+    for (const search of toRefresh) {
+      try {
+        const result = await executeSearch(search);
+        if (result.success) {
+          refreshed++;
+          totalListings += result.listingsFound || 0;
+        }
+      } catch (err) {
+        console.warn(`[SnipeRefresh] Failed to refresh "${search.cardName}":`, err.message);
+      }
+    }
+
+    res.json({
+      refreshed,
+      total: toRefresh.length,
+      listingsFound: totalListings,
+      message: `Refreshed ${refreshed}/${toRefresh.length} searches. ${totalListings} listings updated.`
+    });
+  } catch (error) {
+    console.error('Snipe watchlist refresh error:', error);
+    res.status(500).json({ error: 'Failed to refresh watchlist data' });
   }
 });
 

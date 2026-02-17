@@ -6,6 +6,7 @@ import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore
 import { fetchTcgPlayerPrice } from './pokemonTcg.js';
 import { fetchTcgdexPrice } from './tcgdex.js';
 import { sendSnipeAlertEmail } from './emailService.js';
+import { sendAlertNotifications } from './notificationService.js';
 
 const runningJobs = new Map();
 let isProcessing = false;
@@ -924,8 +925,8 @@ async function processAlert(alert) {
     };
   });
 
-  // Send email
-  const emailSent = await sendSnipeAlertEmail({ alert, listings: emailListings });
+  // Send notifications (email + Discord + Telegram)
+  const emailSent = await sendAlertNotifications({ alert, listings: emailListings });
 
   // Record alert history
   for (const l of newListings) {

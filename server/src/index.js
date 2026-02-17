@@ -17,6 +17,8 @@ import sellerRoutes from './routes/sellers.js';
 import marketAlertRoutes from './routes/marketAlerts.js';
 import setRoutes from './routes/sets.js';
 import snipeAlertRoutes from './routes/snipeAlerts.js';
+import portfolioRoutes from './routes/portfolio.js';
+import notificationSettingsRoutes from './routes/notificationSettings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -109,6 +111,8 @@ async function start() {
     app.use('/api/market-alerts', marketAlertRoutes);
     app.use('/api/sets', setRoutes);
     app.use('/api/snipe-alerts', snipeAlertRoutes);
+    app.use('/api/portfolio', portfolioRoutes);
+    app.use('/api/notification-settings', notificationSettingsRoutes);
 
     // Serve static frontend in production (after API routes so they take priority)
     const clientDistPath = path.join(__dirname, '../../client/dist');

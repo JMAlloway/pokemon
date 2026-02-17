@@ -8,6 +8,9 @@ const useSnipeStore = create((set) => ({
   binDeals: [],
   total: 0,
   isLoading: false,
+  isRefreshing: false,
+  refreshError: null,
+  lastRefreshResult: null,
   error: null,
   filters: {
     maxHours: 6,
@@ -54,6 +57,18 @@ const useSnipeStore = create((set) => ({
       set({ filterOptions: data });
     } catch {
       // Non-critical
+    }
+  },
+
+  refreshWatchlist: async () => {
+    set({ isRefreshing: true, refreshError: null });
+    try {
+      const data = await api.post('/api/snipe-watchlist/refresh');
+      set({ isRefreshing: false, lastRefreshResult: data });
+      return data;
+    } catch (error) {
+      set({ isRefreshing: false, refreshError: error.message });
+      throw error;
     }
   },
 

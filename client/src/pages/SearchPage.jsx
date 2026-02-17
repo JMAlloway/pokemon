@@ -4,6 +4,7 @@ import SearchForm from '../components/SearchForm';
 import ListingCard from '../components/ListingCard';
 import SearchLoadingAnimation from '../components/SearchLoadingAnimation';
 import useSearchStore from '../store/searchStore';
+import { api } from '../utils/api';
 
 export default function SearchPage() {
   const { listings, recentSoldListings, isSearching, error, cached, cacheTimestamp, baseline, baselineSource, recencyScore, sampleSize, search, clearResults } = useSearchStore();
@@ -188,20 +189,71 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty state with smart suggestions */}
       {!isSearching && listings.length === 0 && !error && (
-        <div className="mt-20 text-center animate-[fadeInUp_400ms_ease-out]">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
-            <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-            </svg>
+        <div className="mt-12 animate-[fadeInUp_400ms_ease-out]">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
+              <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+            </div>
+            <p className="text-text-secondary font-medium">Enter a card name above to start scanning for deals.</p>
           </div>
-          <p className="text-text-secondary font-medium">Enter a card name above to start scanning for deals.</p>
-          <p className="text-sm text-text-muted mt-2">
-            Try popular cards like Charizard, Pikachu, or Lugia.
-          </p>
+          <SmartSuggestions onSearch={handleSearch} />
         </div>
       )}
+    </div>
+  );
+}
+
+function SmartSuggestions({ onSearch }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/api/search/suggestions')
+      .then(data => setSuggestions(data.suggestions || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+  if (suggestions.length === 0) return null;
+
+  const reasonLabels = {
+    high_deal_score: { label: 'Hot Deals', color: 'bg-deal-green/15 text-deal-green' },
+    typo_opportunity: { label: 'Typo Finds', color: 'bg-typo-amber/15 text-typo-amber' },
+    price_drop: { label: 'Price Drop', color: 'bg-accent/15 text-accent' }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <div className="flex items-center gap-2 mb-3">
+        <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+        </svg>
+        <h3 className="text-sm font-semibold text-text-primary">Suggested Searches</h3>
+        <span className="text-xs text-text-muted">Based on your data</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {suggestions.map((s, i) => {
+          const reason = reasonLabels[s.reason] || { label: s.reason, color: 'bg-bg-tertiary text-text-secondary' };
+          return (
+            <button
+              key={i}
+              onClick={() => onSearch({ cardName: s.cardName })}
+              className="bg-bg-card border border-border rounded-lg p-3 text-left hover:border-accent/50 transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-text-primary group-hover:text-accent transition-colors">{s.cardName}</span>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${reason.color}`}>{reason.label}</span>
+              </div>
+              <p className="text-xs text-text-muted mt-1">{s.detail}</p>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

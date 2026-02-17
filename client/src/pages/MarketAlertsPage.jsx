@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import useMarketStore from '../store/marketStore';
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ScatterChart, Scatter, ComposedChart } from 'recharts';
 
 function AlertCard({ alert }) {
   const isUp = alert.direction === 'up';
@@ -33,11 +34,30 @@ function AlertCard({ alert }) {
   );
 }
 
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="bg-bg-secondary border border-border rounded-lg px-3 py-2 shadow-lg">
+      <p className="text-[10px] text-text-muted mb-1">{label}</p>
+      {payload.map((entry, i) => (
+        <p key={i} className="text-xs font-medium" style={{ color: entry.color }}>
+          {entry.name}: ${Number(entry.value).toFixed(2)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function PriceHistory({ cardHistory, onClose }) {
+  const [chartDays, setChartDays] = useState(30);
+  const { fetchCardHistory } = useMarketStore();
+
   if (!cardHistory) return null;
 
-  const { cardName, snapshots, trend } = cardHistory;
-  if (snapshots.length === 0) {
+  const { cardName, snapshots, soldData, trend } = cardHistory;
+  const hasSoldData = soldData && soldData.length > 0;
+
+  if (snapshots.length === 0 && !hasSoldData) {
     return (
       <div className="mb-6 bg-bg-card border border-border rounded-lg p-4">
         <div className="flex items-center justify-between mb-2">
@@ -49,13 +69,55 @@ function PriceHistory({ cardHistory, onClose }) {
     );
   }
 
-  const prices = snapshots.map(s => s.price);
-  const maxPrice = Math.max(...prices);
-  const minPrice = Math.min(...prices);
-  const range = maxPrice - minPrice || 1;
+  // Merge snapshots and sold data into a unified timeline
+  const chartData = [];
+  const dateMap = new Map();
+
+  for (const snap of snapshots) {
+    const dateKey = new Date(snap.capturedAt).toLocaleDateString();
+    if (!dateMap.has(dateKey)) {
+      dateMap.set(dateKey, { date: dateKey, timestamp: new Date(snap.capturedAt).getTime() });
+    }
+    const entry = dateMap.get(dateKey);
+    // Use the latest baseline price for the day
+    entry.baseline = snap.price;
+    entry.sampleSize = snap.sampleSize;
+  }
+
+  if (hasSoldData) {
+    for (const sold of soldData) {
+      const dateKey = new Date(sold.soldAt).toLocaleDateString();
+      if (!dateMap.has(dateKey)) {
+        dateMap.set(dateKey, { date: dateKey, timestamp: new Date(sold.soldAt).getTime() });
+      }
+      const entry = dateMap.get(dateKey);
+      // Average sold prices for the same day
+      if (entry.soldPrices) {
+        entry.soldPrices.push(sold.price);
+      } else {
+        entry.soldPrices = [sold.price];
+      }
+    }
+  }
+
+  // Convert to sorted array
+  const sortedData = Array.from(dateMap.values())
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map(entry => ({
+      ...entry,
+      sold: entry.soldPrices
+        ? Math.round((entry.soldPrices.reduce((a, b) => a + b, 0) / entry.soldPrices.length) * 100) / 100
+        : undefined,
+      soldPrices: undefined
+    }));
+
+  const allPrices = sortedData.flatMap(d => [d.baseline, d.sold].filter(Boolean));
+  const minPrice = Math.min(...allPrices);
+  const maxPrice = Math.max(...allPrices);
+  const padding = (maxPrice - minPrice) * 0.1 || 1;
 
   return (
-    <div className="mb-6 bg-bg-card border border-border rounded-lg p-4">
+    <div className="mb-6 bg-bg-card border border-border rounded-lg p-4 animate-[fadeInUp_200ms_ease-out]">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">{cardName} — Price History</h3>
@@ -68,39 +130,87 @@ function PriceHistory({ cardHistory, onClose }) {
             </span>
           )}
         </div>
-        <button onClick={onClose} className="text-xs text-text-muted hover:text-text-primary">Close</button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-0.5">
+            {[7, 14, 30, 90].map(d => (
+              <button
+                key={d}
+                onClick={() => { setChartDays(d); fetchCardHistory(cardName, d); }}
+                className={`text-[10px] px-2 py-1 rounded-md transition-all ${
+                  chartDays === d ? 'bg-accent/20 text-accent font-medium' : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                {d === 7 ? '1W' : d === 14 ? '2W' : d === 30 ? '1M' : '3M'}
+              </button>
+            ))}
+          </div>
+          <button onClick={onClose} className="text-xs text-text-muted hover:text-text-primary ml-2">Close</button>
+        </div>
       </div>
 
-      {/* Simple bar chart */}
-      <div className="flex items-end gap-px h-24 mt-2">
-        {snapshots.map((snap, i) => {
-          const height = ((snap.price - minPrice) / range) * 100;
-          const isUp = trend && snap.price >= trend.startPrice;
-          return (
-            <div
-              key={i}
-              className="flex-1 min-w-[3px] rounded-t relative group"
-              style={{
-                height: `${Math.max(4, height)}%`,
-                backgroundColor: isUp ? 'rgba(239, 68, 68, 0.5)' : 'rgba(34, 197, 94, 0.5)'
-              }}
-            >
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-bg-secondary border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10">
-                ${snap.price.toFixed(2)} — {new Date(snap.capturedAt).toLocaleDateString()}
-              </div>
-            </div>
-          );
-        })}
+      {/* Recharts line chart */}
+      <div className="h-56">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={sortedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+            <defs>
+              <linearGradient id="baselineGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <XAxis
+              dataKey="date"
+              tick={{ fill: '#64748b', fontSize: 10 }}
+              tickLine={false}
+              axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              domain={[Math.floor(minPrice - padding), Math.ceil(maxPrice + padding)]}
+              tick={{ fill: '#64748b', fontSize: 10 }}
+              tickLine={false}
+              axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+              tickFormatter={v => `$${v}`}
+              width={50}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Area
+              type="monotone"
+              dataKey="baseline"
+              name="Market Baseline"
+              stroke="#6366f1"
+              strokeWidth={2}
+              fill="url(#baselineGradient)"
+              dot={false}
+              connectNulls
+            />
+            {hasSoldData && (
+              <Scatter
+                dataKey="sold"
+                name="Sold Price"
+                fill="#22c55e"
+                r={3}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
-      <div className="flex justify-between mt-1">
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-2 justify-center">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-0.5 bg-[#6366f1] rounded" />
+          <span className="text-[10px] text-text-muted">Market Baseline</span>
+        </div>
+        {hasSoldData && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 bg-[#22c55e] rounded-full" />
+            <span className="text-[10px] text-text-muted">Actual Sold Prices</span>
+          </div>
+        )}
         <span className="text-[10px] text-text-muted">
-          {new Date(snapshots[0].capturedAt).toLocaleDateString()}
-        </span>
-        <span className="text-[10px] text-text-muted">
-          ${minPrice.toFixed(2)} — ${maxPrice.toFixed(2)}
-        </span>
-        <span className="text-[10px] text-text-muted">
-          {new Date(snapshots[snapshots.length - 1].capturedAt).toLocaleDateString()}
+          {sortedData.length} data points
         </span>
       </div>
     </div>

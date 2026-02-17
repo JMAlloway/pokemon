@@ -93,20 +93,29 @@ router.get('/:cardName', async (req, res) => {
     const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 30));
     const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const snapshots = await prisma.marketSnapshot.findMany({
-      where: {
-        cardName,
-        capturedAt: { gte: cutoffDate }
-      },
-      orderBy: { capturedAt: 'asc' }
-    });
+    const [snapshots, soldListings] = await Promise.all([
+      prisma.marketSnapshot.findMany({
+        where: {
+          cardName,
+          capturedAt: { gte: cutoffDate }
+        },
+        orderBy: { capturedAt: 'asc' }
+      }),
+      prisma.recentSoldListing.findMany({
+        where: {
+          cardName,
+          soldAt: { gte: cutoffDate }
+        },
+        orderBy: { soldAt: 'asc' }
+      })
+    ]);
 
-    if (snapshots.length === 0) {
-      return res.json({ cardName, snapshots: [], trend: null });
+    if (snapshots.length === 0 && soldListings.length === 0) {
+      return res.json({ cardName, snapshots: [], soldData: [], trend: null });
     }
 
-    const first = Number(snapshots[0].baselinePrice);
-    const last = Number(snapshots[snapshots.length - 1].baselinePrice);
+    const first = snapshots.length > 0 ? Number(snapshots[0].baselinePrice) : 0;
+    const last = snapshots.length > 0 ? Number(snapshots[snapshots.length - 1].baselinePrice) : 0;
     const changePercent = first > 0
       ? Math.round(((last - first) / first) * 10000) / 100
       : 0;
@@ -118,12 +127,18 @@ router.get('/:cardName', async (req, res) => {
         sampleSize: s.sampleSize,
         capturedAt: s.capturedAt
       })),
-      trend: {
+      soldData: soldListings.map(s => ({
+        price: Number(s.soldPrice),
+        shippingCost: s.shippingCost ? Number(s.shippingCost) : 0,
+        condition: s.condition,
+        soldAt: s.soldAt
+      })),
+      trend: snapshots.length >= 2 ? {
         startPrice: first,
         endPrice: last,
         changePercent,
         direction: changePercent > 0 ? 'up' : changePercent < 0 ? 'down' : 'flat'
-      }
+      } : null
     });
   } catch (error) {
     console.error('Market history error:', error);

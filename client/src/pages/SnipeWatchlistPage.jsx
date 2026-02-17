@@ -3,6 +3,7 @@ import useSnipeStore from '../store/snipeStore';
 import useSnipeAlertStore from '../store/snipeAlertStore';
 import DealScoreBadge from '../components/DealScoreBadge';
 import PriceDisplay from '../components/PriceDisplay';
+import { api } from '../utils/api';
 
 /* ── Listing Row (works for both auctions and BIN) ── */
 function ListingRow({ listing }) {
@@ -563,8 +564,9 @@ function AlertsPanel() {
 
 /* ── Main Page ── */
 export default function SnipeWatchlistPage() {
-  const { urgent, soon, upcoming, binDeals, total, isLoading, error, filters, fetchWatchlist, setFilters, fetchFilterOptions, filterOptions } = useSnipeStore();
+  const { urgent, soon, upcoming, binDeals, total, isLoading, isRefreshing, lastRefreshResult, error, filters, fetchWatchlist, refreshWatchlist, setFilters, fetchFilterOptions, filterOptions } = useSnipeStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState(null);
 
   useEffect(() => {
     fetchFilterOptions();
@@ -584,12 +586,50 @@ export default function SnipeWatchlistPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-text-primary mb-1">Snipe Watchlist</h2>
-        <p className="text-sm text-text-secondary">
-          Find auctions and BIN deals below market value. Auto-refreshes every minute.
-        </p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-text-primary mb-1">Snipe Watchlist</h2>
+          <p className="text-sm text-text-secondary">
+            Find auctions and BIN deals below market value. Auto-refreshes every minute.
+          </p>
+        </div>
+        <button
+          onClick={async () => {
+            setRefreshMsg(null);
+            try {
+              const result = await refreshWatchlist();
+              setRefreshMsg(result.message);
+              fetchWatchlist(filters);
+              setTimeout(() => setRefreshMsg(null), 5000);
+            } catch {
+              setRefreshMsg('Failed to refresh. Try again.');
+              setTimeout(() => setRefreshMsg(null), 4000);
+            }
+          }}
+          disabled={isRefreshing}
+          className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition-colors font-medium disabled:opacity-50 shrink-0"
+          title="Pull fresh listings from eBay (does not trigger email alerts)"
+        >
+          {isRefreshing ? (
+            <div className="w-3.5 h-3.5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+          ) : (
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M4.031 9.865v-4.992" />
+            </svg>
+          )}
+          {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+        </button>
       </div>
+
+      {/* Refresh result message */}
+      {refreshMsg && (
+        <div className="mb-4 bg-accent/10 border border-accent/20 rounded-lg p-3 flex items-center gap-2 animate-[fadeInUp_150ms_ease-out]">
+          <svg className="w-4 h-4 text-accent shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-xs text-accent">{refreshMsg}</span>
+        </div>
+      )}
 
       {/* Listing Type Toggle */}
       <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-0.5 mb-4 w-fit">
@@ -770,6 +810,155 @@ export default function SnipeWatchlistPage() {
 
       {/* Email Alerts Panel */}
       <AlertsPanel />
+
+      {/* Notification Settings */}
+      <NotificationSettings />
+    </div>
+  );
+}
+
+/* ── Notification Settings ── */
+function NotificationSettings() {
+  const [open, setOpen] = useState(false);
+  const [settings, setSettings] = useState(null);
+  const [discordUrl, setDiscordUrl] = useState('');
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChat, setTelegramChat] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  useEffect(() => {
+    if (open && !settings) {
+      api.get('/api/notification-settings').then(data => {
+        setSettings(data);
+        setTelegramChat(data.telegram?.chatId || '');
+      }).catch(() => {});
+    }
+  }, [open, settings]);
+
+  const handleSave = async (channel) => {
+    setSaving(true);
+    try {
+      const body = {};
+      if (channel === 'discord') body.discordWebhookUrl = discordUrl || null;
+      if (channel === 'telegram') {
+        body.telegramBotToken = telegramToken || null;
+        body.telegramChatId = telegramChat || null;
+      }
+      await api.put('/api/notification-settings', body);
+      setSettings(null); // Refresh
+      setDiscordUrl('');
+      setTelegramToken('');
+    } catch {
+      // Error handled
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async (channel) => {
+    setTestResult(null);
+    try {
+      const result = await api.post('/api/notification-settings/test', { channel });
+      setTestResult({ channel, ...result });
+    } catch (err) {
+      setTestResult({ channel, success: false, message: err.message });
+    }
+  };
+
+  const inputClass = "text-xs bg-bg-tertiary text-text-primary border border-border rounded-lg px-2.5 py-1.5 focus:border-accent outline-none w-full";
+
+  return (
+    <div className="mt-6 border-t border-border pt-6">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 text-sm font-semibold text-text-primary hover:text-accent transition-colors"
+      >
+        <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 011.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 01-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.397.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 01-.12-1.45l.527-.737c.25-.35.273-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.107-1.204l-.527-.738a1.125 1.125 0 01.12-1.45l.773-.773a1.125 1.125 0 011.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        Notification Channels
+        <svg className={`w-3 h-3 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+        {settings && (settings.discordConfigured || settings.telegramConfigured) && (
+          <span className="text-xs text-deal-green font-normal">Active</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-4 animate-[fadeInUp_150ms_ease-out]">
+          <p className="text-xs text-text-muted">Alerts are sent to all configured channels when triggered.</p>
+
+          {/* Discord */}
+          <div className="bg-bg-card border border-border rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-medium text-text-primary">Discord</span>
+              {settings?.discordConfigured && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-deal-green/15 text-deal-green font-medium">Connected</span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={discordUrl}
+                onChange={e => setDiscordUrl(e.target.value)}
+                placeholder={settings?.discordConfigured ? 'Update webhook URL...' : 'https://discord.com/api/webhooks/...'}
+                className={inputClass}
+              />
+              <button onClick={() => handleSave('discord')} disabled={saving} className="text-xs px-3 py-1.5 bg-accent text-white rounded-lg shrink-0 disabled:opacity-50">
+                {saving ? '...' : 'Save'}
+              </button>
+              {settings?.discordConfigured && (
+                <button onClick={() => handleTest('discord')} className="text-xs px-2 py-1.5 bg-bg-tertiary text-text-secondary rounded-lg shrink-0 hover:text-text-primary">
+                  Test
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Telegram */}
+          <div className="bg-bg-card border border-border rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-medium text-text-primary">Telegram</span>
+              {settings?.telegramConfigured && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-deal-green/15 text-deal-green font-medium">Connected</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                value={telegramToken}
+                onChange={e => setTelegramToken(e.target.value)}
+                placeholder={settings?.telegramConfigured ? 'Update bot token...' : 'Bot token from @BotFather'}
+                className={inputClass}
+              />
+              <input
+                value={telegramChat}
+                onChange={e => setTelegramChat(e.target.value)}
+                placeholder="Chat ID"
+                className={inputClass}
+              />
+            </div>
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => handleSave('telegram')} disabled={saving} className="text-xs px-3 py-1.5 bg-accent text-white rounded-lg disabled:opacity-50">
+                {saving ? '...' : 'Save'}
+              </button>
+              {settings?.telegramConfigured && (
+                <button onClick={() => handleTest('telegram')} className="text-xs px-2 py-1.5 bg-bg-tertiary text-text-secondary rounded-lg hover:text-text-primary">
+                  Test
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Test result */}
+          {testResult && (
+            <div className={`text-xs px-3 py-2 rounded-lg ${testResult.success ? 'bg-deal-green/10 text-deal-green' : 'bg-error/10 text-error'}`}>
+              {testResult.message}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -238,4 +238,117 @@ router.get('/tcg-price', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/search/suggestions — Smart search suggestions based on existing data.
+ *
+ * Analyzes past search performance to recommend what to search next.
+ */
+router.get('/suggestions', async (req, res) => {
+  try {
+    // 1. Cards with highest average deal scores (most profitable searches)
+    const topDealCards = await prisma.ebayListing.groupBy({
+      by: ['cardName'],
+      where: {
+        dealScore: { gte: 30 },
+        listingStatus: 'active'
+      },
+      _avg: { dealScore: true },
+      _count: { id: true },
+      orderBy: { _avg: { dealScore: 'desc' } },
+      take: 10
+    });
+
+    // 2. Cards with most typo listings (opportunity for underpriced finds)
+    const typoCards = await prisma.ebayListing.groupBy({
+      by: ['cardName'],
+      where: {
+        hasTypo: true,
+        listingStatus: 'active'
+      },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 5
+    });
+
+    // 3. Cards with recent price drops (from market snapshots)
+    const recentDrops = await prisma.$queryRaw`
+      SELECT DISTINCT ON ("cardName") "cardName", "baselinePrice", "capturedAt"
+      FROM "MarketSnapshot"
+      WHERE "capturedAt" > NOW() - INTERVAL '7 days'
+      ORDER BY "cardName", "capturedAt" DESC
+    `.catch(() => []);
+
+    const olderPrices = await prisma.$queryRaw`
+      SELECT DISTINCT ON ("cardName") "cardName", "baselinePrice", "capturedAt"
+      FROM "MarketSnapshot"
+      WHERE "capturedAt" BETWEEN NOW() - INTERVAL '14 days' AND NOW() - INTERVAL '7 days'
+      ORDER BY "cardName", "capturedAt" DESC
+    `.catch(() => []);
+
+    const olderMap = new Map(olderPrices.map(p => [p.cardName, Number(p.baselinePrice)]));
+    const priceDropSuggestions = recentDrops
+      .filter(r => olderMap.has(r.cardName))
+      .map(r => {
+        const oldPrice = olderMap.get(r.cardName);
+        const newPrice = Number(r.baselinePrice);
+        const changePct = ((newPrice - oldPrice) / oldPrice) * 100;
+        return { cardName: r.cardName, currentPrice: newPrice, previousPrice: oldPrice, changePct };
+      })
+      .filter(d => d.changePct < -10) // Only drops > 10%
+      .sort((a, b) => a.changePct - b.changePct)
+      .slice(0, 5);
+
+    // 4. Get user's existing searches to exclude
+    const existingSearches = await prisma.searchQuery.findMany({
+      where: { userId: req.userId },
+      select: { cardName: true }
+    });
+    const existingSet = new Set(existingSearches.map(s => s.cardName));
+
+    // Build suggestions
+    const suggestions = [];
+
+    for (const card of topDealCards) {
+      if (!existingSet.has(card.cardName)) {
+        suggestions.push({
+          cardName: card.cardName,
+          reason: 'high_deal_score',
+          detail: `Avg deal score: ${Math.round(card._avg.dealScore)} across ${card._count.id} listings`,
+          score: Math.round(card._avg.dealScore)
+        });
+      }
+    }
+
+    for (const card of typoCards) {
+      if (!existingSet.has(card.cardName) && !suggestions.some(s => s.cardName === card.cardName)) {
+        suggestions.push({
+          cardName: card.cardName,
+          reason: 'typo_opportunity',
+          detail: `${card._count.id} misspelled listings found`,
+          score: card._count.id * 10
+        });
+      }
+    }
+
+    for (const drop of priceDropSuggestions) {
+      if (!existingSet.has(drop.cardName) && !suggestions.some(s => s.cardName === drop.cardName)) {
+        suggestions.push({
+          cardName: drop.cardName,
+          reason: 'price_drop',
+          detail: `Price dropped ${Math.abs(drop.changePct).toFixed(1)}% ($${drop.previousPrice.toFixed(2)} → $${drop.currentPrice.toFixed(2)})`,
+          score: Math.abs(drop.changePct)
+        });
+      }
+    }
+
+    // Sort by score and limit
+    suggestions.sort((a, b) => b.score - a.score);
+
+    res.json({ suggestions: suggestions.slice(0, 10) });
+  } catch (error) {
+    console.error('Smart suggestions error:', error);
+    res.status(500).json({ error: 'Failed to generate suggestions' });
+  }
+});
+
 export default router;

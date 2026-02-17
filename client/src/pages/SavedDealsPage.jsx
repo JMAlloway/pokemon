@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import useSavedDealsStore from '../store/savedDealsStore';
+import usePortfolioStore from '../store/portfolioStore';
 import DealScoreBadge from '../components/DealScoreBadge';
 import TypoBadge from '../components/TypoBadge';
 import ListingDetail from '../components/ListingDetail';
 
 export default function SavedDealsPage() {
   const { deals, notifications, isLoading, error, fetchDeals, removeDeal } = useSavedDealsStore();
+  const { markAsPurchased } = usePortfolioStore();
   const [sortBy, setSortBy] = useState('savedAt');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [purchaseInput, setPurchaseInput] = useState(null);
   const [statusFilter, setStatusFilter] = useState('active');
   const [expandedDeal, setExpandedDeal] = useState(null);
   const [removeConfirm, setRemoveConfirm] = useState(null);
@@ -211,6 +214,31 @@ export default function SavedDealsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        {purchaseInput === deal.id ? (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              const price = e.target.elements.price.value;
+                              if (price) {
+                                await markAsPurchased(deal.id, Number(price));
+                                setPurchaseInput(null);
+                                fetchDeals(sortBy, sortOrder, statusFilter);
+                              }
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            <input name="price" type="number" step="0.01" min="0" defaultValue={Number(deal.priceAtSave).toFixed(2)} className="text-xs bg-bg-tertiary border border-accent rounded px-2 py-1 w-20 text-text-primary outline-none" autoFocus />
+                            <button type="submit" className="text-xs px-2 py-1 rounded-md bg-deal-green/15 text-deal-green font-medium">Save</button>
+                            <button type="button" onClick={() => setPurchaseInput(null)} className="text-xs px-1.5 py-1 text-text-muted">X</button>
+                          </form>
+                        ) : (
+                          <button
+                            onClick={() => setPurchaseInput(deal.id)}
+                            className="text-xs px-2.5 py-1 rounded-md bg-deal-green/15 text-deal-green hover:bg-deal-green/25 transition-colors font-medium"
+                          >
+                            Mark Purchased
+                          </button>
+                        )}
                         <button
                           onClick={() => setExpandedDeal(deal)}
                           className="text-xs px-2.5 py-1 rounded-md bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors"
