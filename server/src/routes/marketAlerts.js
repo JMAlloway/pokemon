@@ -3,6 +3,8 @@ import prisma from '../db.js';
 
 const router = Router();
 
+const GRADED_PATTERN = /\b(PSA|CGC|BGS|SGC|AGS|ACE|GMA|MNT)\b|\bgrade[d]?\b|\bslab(bed)?\b/i;
+
 /**
  * GET /api/market-alerts — Get cards with significant price movement.
  *
@@ -127,12 +129,14 @@ router.get('/:cardName', async (req, res) => {
         sampleSize: s.sampleSize,
         capturedAt: s.capturedAt
       })),
-      soldData: soldListings.map(s => ({
-        price: Number(s.soldPrice),
-        shippingCost: s.shippingCost ? Number(s.shippingCost) : 0,
-        condition: s.condition,
-        soldAt: s.soldAt
-      })),
+      soldData: soldListings
+        .filter(s => !s.listingTitle || !GRADED_PATTERN.test(s.listingTitle))
+        .map(s => ({
+          price: Number(s.soldPrice),
+          shippingCost: s.shippingCost ? Number(s.shippingCost) : 0,
+          condition: s.condition,
+          soldAt: s.soldAt
+        })),
       trend: snapshots.length >= 2 ? {
         startPrice: first,
         endPrice: last,

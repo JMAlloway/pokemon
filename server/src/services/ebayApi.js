@@ -510,6 +510,7 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
         const endTime = item.listingInfo?.[0]?.endTime?.[0];
         const ebayItemId = item.itemId?.[0] || null;
         const ebayUrl = item.viewItemURL?.[0] || null;
+        const listingTitle = item.title?.[0] || null;
 
         return {
           cardName,
@@ -519,7 +520,8 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
           soldAt: endTime ? new Date(endTime) : new Date(),
           source: 'eBay-sold',
           ebayItemId,
-          ebayUrl
+          ebayUrl,
+          listingTitle
         };
       })
       .filter(item => item.soldPrice > 0);

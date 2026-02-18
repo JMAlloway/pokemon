@@ -681,7 +681,8 @@ async function storeSoldListings(soldListings, cardName, set) {
           daysOld: Math.min(90, daysOld),
           source: sold.source || 'eBay',
           ebayItemId: sold.ebayItemId || null,
-          ebayUrl: sold.ebayUrl || null
+          ebayUrl: sold.ebayUrl || null,
+          listingTitle: sold.listingTitle || null
         }
       });
     } catch {
