@@ -4,33 +4,11 @@ CREATE TYPE "ChaseCardStatus" AS ENUM ('needed', 'dealFound', 'purchased');
 -- AlterEnum
 ALTER TYPE "JobType" ADD VALUE 'ChaseListScan';
 
--- AlterTable
-ALTER TABLE "EbayListing" ADD COLUMN     "shippingEstimated" BOOLEAN NOT NULL DEFAULT false;
-
--- AlterTable
-ALTER TABLE "RecentSoldListing" ADD COLUMN     "shippingCost" DECIMAL(10,2);
-
--- CreateTable
-CREATE TABLE "SetCard" (
-    "id" UUID NOT NULL,
-    "setName" VARCHAR(100) NOT NULL,
-    "cardNumber" VARCHAR(20) NOT NULL,
-    "cardName" VARCHAR(255) NOT NULL,
-    "rarity" VARCHAR(50),
-    "cardType" VARCHAR(50),
-    "imageUrl" TEXT,
-    "marketPrice" DECIMAL(10,2),
-    "lastPriceUpdate" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "SetCard_pkey" PRIMARY KEY ("id")
-);
-
 -- CreateTable
 CREATE TABLE "ChaseList" (
     "id" UUID NOT NULL,
     "userId" UUID NOT NULL,
-    "setName" VARCHAR(100) NOT NULL,
+    "setCode" VARCHAR(20) NOT NULL,
     "alertMinPercent" DECIMAL(5,2) NOT NULL DEFAULT 10,
     "alertMaxPrice" DECIMAL(10,2),
     "alertCooldownMinutes" INTEGER NOT NULL DEFAULT 60,
@@ -59,19 +37,13 @@ CREATE TABLE "ChaseListCard" (
 );
 
 -- CreateIndex
-CREATE INDEX "SetCard_setName_idx" ON "SetCard"("setName");
-
--- CreateIndex
-CREATE UNIQUE INDEX "SetCard_setName_cardNumber_key" ON "SetCard"("setName", "cardNumber");
-
--- CreateIndex
 CREATE INDEX "ChaseList_userId_idx" ON "ChaseList"("userId");
 
 -- CreateIndex
 CREATE INDEX "ChaseList_scanEnabled_idx" ON "ChaseList"("scanEnabled");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ChaseList_userId_setName_key" ON "ChaseList"("userId", "setName");
+CREATE UNIQUE INDEX "ChaseList_userId_setCode_key" ON "ChaseList"("userId", "setCode");
 
 -- CreateIndex
 CREATE INDEX "ChaseListCard_chaseListId_idx" ON "ChaseListCard"("chaseListId");

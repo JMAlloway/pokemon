@@ -1,4 +1,4 @@
-export default function PriceDisplay({ price, shippingCost, shippingEstimated, baseline, gapPercent, showGap = true }) {
+export default function PriceDisplay({ price, shippingCost, shippingEstimated, baseline, gapPercent, showGap = true, baselineSource }) {
   const priceNum = Number(price);
   const shippingNum = shippingCost !== null && shippingCost !== undefined ? Number(shippingCost) : null;
   const shippingKnown = shippingNum !== null;
@@ -29,7 +29,7 @@ export default function PriceDisplay({ price, shippingCost, shippingEstimated, b
       )}
       {baselineNum && showGap && (
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-xs text-text-muted">Mkt (w/ ship): ${baselineNum.toFixed(2)}</span>
+          <span className="text-xs text-text-muted">{baselineSource === 'tcgplayer' ? 'TCG' : 'Mkt'}: ${baselineNum.toFixed(2)}</span>
           {gap !== null ? (
             <span
               className={`text-xs font-semibold ${

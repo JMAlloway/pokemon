@@ -4,7 +4,7 @@ import TypoBadge from './TypoBadge';
 import SellerInfo from './SellerInfo';
 import { api } from '../utils/api';
 
-export default function ListingDetail({ listing, recentSoldListings: initialSold, onClose, onSave, saveStatus }) {
+export default function ListingDetail({ listing, recentSoldListings: initialSold, baselineSource, onClose, onSave, saveStatus }) {
   const [soldComps, setSoldComps] = useState(initialSold || []);
   const [alsoFoundIn, setAlsoFoundIn] = useState([]);
   const [scoreBreakdown, setScoreBreakdown] = useState(null);
@@ -12,7 +12,8 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
   useEffect(() => {
     async function loadDetails() {
       try {
-        const data = await api.get(`/api/listings/${listing.ebayListingId}`);
+        const queryParam = listing.searchQueryId ? `?searchQueryId=${listing.searchQueryId}` : '';
+        const data = await api.get(`/api/listings/${listing.ebayListingId}${queryParam}`);
         if (data.recentSoldListings) setSoldComps(data.recentSoldListings);
         if (data.alsoFoundIn) setAlsoFoundIn(data.alsoFoundIn);
         if (data.scoreBreakdown) setScoreBreakdown(data.scoreBreakdown);
@@ -21,7 +22,13 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
       }
     }
     loadDetails();
-  }, [listing.ebayListingId]);
+  }, [listing.ebayListingId, listing.searchQueryId]);
+
+  // Lock body scroll when drawer is open
+  useEffect(() => {
+    document.body.classList.add('no-scroll');
+    return () => document.body.classList.remove('no-scroll');
+  }, []);
 
   useEffect(() => {
     const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
@@ -48,14 +55,14 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" role="dialog" aria-modal="true" aria-label="Listing details">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-xl h-full bg-bg-secondary border-l border-border overflow-y-auto">
+      <div className="absolute inset-0 bg-black/60 animate-[fadeIn_200ms_ease-out]" onClick={onClose} />
+      <div className="relative w-full max-w-xl h-full bg-bg-secondary border-l border-border overflow-y-auto animate-[slideInRight_250ms_ease-out]">
         {/* Header */}
-        <div className="sticky top-0 bg-bg-secondary border-b border-border p-4 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-bg-secondary/90 backdrop-blur-md border-b border-border p-4 flex items-center justify-between z-10">
           <h2 className="text-lg font-bold text-text-primary truncate pr-4">{listing.cardName}</h2>
           <button
             onClick={onClose}
-            className="shrink-0 p-1.5 rounded-md hover:bg-bg-tertiary text-text-secondary"
+            className="shrink-0 p-2 rounded-lg hover:bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors"
             aria-label="Close details"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -67,13 +74,13 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
         <div className="p-4 space-y-6">
           {/* Images */}
           {listing.images && listing.images.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory">
               {listing.images.map((img, i) => (
                 <img
                   key={i}
                   src={img}
                   alt={`${listing.cardName} image ${i + 1}`}
-                  className="w-40 h-56 object-cover rounded-lg bg-bg-tertiary shrink-0"
+                  className="w-40 h-56 object-cover rounded-lg bg-bg-tertiary shrink-0 snap-center"
                   loading="lazy"
                 />
               ))}
@@ -81,7 +88,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
           )}
 
           {/* Score and flags */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <DealScoreBadge score={listing.dealScore} size="lg" />
             <TypoBadge hasTypo={listing.hasTypo} details={listing.typoDetails} confidence={listing.typoConfidenceScore} />
             {gap !== null && (
@@ -108,7 +115,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                     </div>
                     <div className="w-full h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all ${c.points > 0 ? 'bg-accent' : 'bg-bg-tertiary'}`}
+                        className={`h-full rounded-full transition-all duration-500 ${c.points > 0 ? 'bg-accent' : 'bg-bg-tertiary'}`}
                         style={{ width: `${(c.points / c.max) * 100}%` }}
                       />
                     </div>
@@ -155,7 +162,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-text-muted">Market Avg</p>
+                  <p className="text-xs text-text-muted">{baselineSource === 'tcgplayer' ? 'TCGPlayer' : 'Market Avg'}</p>
                   <p className="text-lg font-bold text-text-secondary">
                     {listing.recentSoldPrice ? `$${Number(listing.recentSoldPrice).toFixed(2)}` : 'N/A'}
                   </p>
@@ -163,7 +170,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
               </div>
               {listing.bidCount !== null && listing.bidCount <= 2 && gap !== null && gap > 10 && (
                 <p className="text-xs text-deal-green mt-2 font-medium">
-                  Low competition with below-market price — potential opportunity
+                  Low competition with below-market price
                 </p>
               )}
               {listing.bidCount !== null && listing.bidCount > 8 && (
@@ -201,7 +208,7 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                   {listing.recentSoldPrice && !isAuction && (
                     <div>
                       <span className="text-lg text-text-secondary">${Number(listing.recentSoldPrice).toFixed(2)}</span>
-                      <span className="text-sm text-text-muted ml-1">market avg</span>
+                      <span className="text-sm text-text-muted ml-1">{baselineSource === 'tcgplayer' ? 'TCGPlayer' : 'market avg'}</span>
                     </div>
                   )}
                 </div>
@@ -242,17 +249,25 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                 Recent Sold Comps ({soldComps.filter(s => !s.isOutlier).length})
                 {soldComps.some(s => s.isOutlier) && (
                   <span className="font-normal normal-case tracking-normal ml-1">
-                    · {soldComps.filter(s => s.isOutlier).length} outlier{soldComps.filter(s => s.isOutlier).length > 1 ? 's' : ''} excluded
+                    {soldComps.filter(s => s.isOutlier).length} outlier{soldComps.filter(s => s.isOutlier).length > 1 ? 's' : ''} excluded
+                  </span>
+                )}
+                {soldComps.some(s => s.source === 'eBay-active-estimate') && (
+                  <span className="font-normal normal-case tracking-normal ml-1 text-typo-amber">
+                    estimates from active listings
                   </span>
                 )}
               </h4>
               <div className="space-y-2">
                 {soldComps.map((sold, i) => {
                   const daysAgo = sold.daysOld || Math.floor((Date.now() - new Date(sold.soldAt).getTime()) / (1000 * 60 * 60 * 24));
-                  const recencyLabel = daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
-                  const recencyColor = daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
+                  const isEstimate = sold.source === 'eBay-active-estimate';
+                  const recencyLabel = isEstimate ? 'Est.' : daysAgo <= 7 ? 'Fresh' : daysAgo <= 30 ? 'Recent' : 'Older';
+                  const recencyColor = isEstimate ? 'text-typo-amber' : daysAgo <= 7 ? 'text-deal-green' : daysAgo <= 30 ? 'text-typo-amber' : 'text-text-muted';
                   const soldShipping = sold.shippingCost != null ? Number(sold.shippingCost) : null;
-                  const soldTotal = Number(sold.soldPrice) + (soldShipping || 0);
+                  const soldTotal = soldShipping != null
+                    ? Number(sold.soldPrice) + soldShipping
+                    : Number(sold.soldPrice);
 
                   return (
                     <div key={i} className={`flex items-center justify-between py-1.5 border-b border-border last:border-0 ${sold.isOutlier ? 'opacity-40' : ''}`}>
@@ -271,9 +286,24 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
                           <span className={`text-xs font-medium ${recencyColor}`}>{recencyLabel}</span>
                         )}
                       </div>
-                      <span className="text-xs text-text-muted">
-                        {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-text-muted">
+                          {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}
+                        </span>
+                        {sold.ebayUrl && !isEstimate && (
+                          <a
+                            href={sold.ebayUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-text-muted hover:text-accent transition-colors"
+                            title="View on eBay"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                              <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5zm7.25-.75a.75.75 0 01.75-.75h3.5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0V6.31l-5.47 5.47a.75.75 0 01-1.06-1.06l5.47-5.47H12.25a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                            </svg>
+                          </a>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -294,24 +324,32 @@ export default function ListingDetail({ listing, recentSoldListings: initialSold
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-2 pb-4">
             <a
               href={listing.listingUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 text-center py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover transition-colors"
+              className="flex-1 text-center py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-accent-hover transition-colors flex items-center justify-center gap-2"
             >
               View on eBay
+              <svg className="w-4 h-4 opacity-70" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
             </a>
             <button
               onClick={onSave}
               disabled={saveStatus === 'saved' || saveStatus === 'saving'}
-              className={`flex-1 py-2.5 rounded-lg font-medium transition-colors ${
+              className={`flex-1 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
                 saveStatus === 'saved'
                   ? 'bg-deal-green/15 text-deal-green cursor-default'
                   : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
               }`}
             >
+              {saveStatus === 'saved' && (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                </svg>
+              )}
               {saveStatus === 'saved' ? 'Saved to Deals' : saveStatus === 'saving' ? 'Saving...' : 'Save to Deals'}
             </button>
           </div>

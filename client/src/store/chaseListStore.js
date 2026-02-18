@@ -26,10 +26,10 @@ const useChaseListStore = create((set, get) => ({
   },
 
   // Fetch set card catalog for browsing
-  fetchSetCards: async (setName) => {
+  fetchSetCards: async (setCode) => {
     set({ isLoading: true, error: null });
     try {
-      const data = await api.get(`/api/chase-lists/sets/${encodeURIComponent(setName)}/cards`);
+      const data = await api.get(`/api/chase-lists/sets/${encodeURIComponent(setCode)}/cards`);
       set({ setCards: data, isLoading: false });
     } catch (error) {
       set({ isLoading: false, error: error.message });
@@ -60,10 +60,10 @@ const useChaseListStore = create((set, get) => ({
   },
 
   // Create a new chase list for a set
-  createChaseList: async (setName, settings = {}) => {
+  createChaseList: async (setCode, settings = {}) => {
     set({ isLoading: true, error: null });
     try {
-      const data = await api.post('/api/chase-lists', { setName, ...settings });
+      const data = await api.post('/api/chase-lists', { setCode, ...settings });
       set(state => ({
         chaseLists: [data, ...state.chaseLists],
         activeList: data,

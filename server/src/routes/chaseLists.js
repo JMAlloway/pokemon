@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import prisma from '../db.js';
-import { POKEMON_SETS } from '../services/pokemonTcg.js';
 
 const router = Router();
 
@@ -8,13 +7,13 @@ const router = Router();
 router.get('/sets', async (req, res) => {
   try {
     const setsWithCards = await prisma.setCard.groupBy({
-      by: ['setName'],
+      by: ['setCode'],
       _count: { id: true },
-      orderBy: { setName: 'asc' }
+      orderBy: { setCode: 'asc' }
     });
 
     const sets = setsWithCards.map(s => ({
-      name: s.setName,
+      code: s.setCode,
       cardCount: s._count.id
     }));
 
@@ -25,12 +24,12 @@ router.get('/sets', async (req, res) => {
   }
 });
 
-// GET /api/chase-lists/sets/:setName/cards — Get all cards in a set
-router.get('/sets/:setName/cards', async (req, res) => {
+// GET /api/chase-lists/sets/:setCode/cards — Get all cards in a set
+router.get('/sets/:setCode/cards', async (req, res) => {
   try {
-    const { setName } = req.params;
+    const { setCode } = req.params;
     const cards = await prisma.setCard.findMany({
-      where: { setName },
+      where: { setCode },
       orderBy: { cardNumber: 'asc' }
     });
 
@@ -120,21 +119,21 @@ router.get('/:id', async (req, res) => {
 // POST /api/chase-lists — Create a new chase list for a set
 router.post('/', async (req, res) => {
   try {
-    const { setName, alertMinPercent, alertMaxPrice, alertCooldownMinutes } = req.body;
+    const { setCode, alertMinPercent, alertMaxPrice, alertCooldownMinutes } = req.body;
 
-    if (!setName) {
-      return res.status(400).json({ error: 'Set name is required' });
+    if (!setCode) {
+      return res.status(400).json({ error: 'Set code is required' });
     }
 
     // Verify set exists in our card database
-    const setCards = await prisma.setCard.findMany({ where: { setName } });
+    const setCards = await prisma.setCard.findMany({ where: { setCode } });
     if (setCards.length === 0) {
       return res.status(400).json({ error: 'Set not found in database' });
     }
 
     // Check for existing chase list for this set
     const existing = await prisma.chaseList.findFirst({
-      where: { userId: req.userId, setName }
+      where: { userId: req.userId, setCode }
     });
     if (existing) {
       return res.status(409).json({ error: 'Chase list already exists for this set', chaseListId: existing.id });
@@ -143,7 +142,7 @@ router.post('/', async (req, res) => {
     const list = await prisma.chaseList.create({
       data: {
         userId: req.userId,
-        setName,
+        setCode,
         alertMinPercent: alertMinPercent || 10,
         alertMaxPrice: alertMaxPrice || null,
         alertCooldownMinutes: alertCooldownMinutes || 60

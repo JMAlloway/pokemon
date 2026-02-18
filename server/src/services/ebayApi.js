@@ -279,7 +279,7 @@ const POKEMON_CARDS_CATEGORY = '183454';
  * Search eBay for active Pokemon card listings.
  * Uses Browse API /buy/browse/v1/item_summary/search
  */
-export async function searchListings({ cardName, set, rarity, condition, graded, language, limit = 50 }) {
+export async function searchListings({ cardName, set, rarity, condition, graded, language }) {
   // Use the card name directly — category_ids scopes to Pokemon cards
   // so we don't need to prepend "Pokemon card" which over-constrains specific searches
   let query = cardName;
@@ -319,7 +319,8 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
     const params = new URLSearchParams({
       q: query,
       category_ids: POKEMON_CARDS_CATEGORY,
-      limit: String(searchLimit)
+      limit: String(searchLimit),
+      fieldgroups: 'EXTENDED'
     });
     const filters = [`buyingOptions:{${buyingOption}}`, ...baseFilters];
     params.append('filter', filters.join(','));
@@ -330,17 +331,17 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
   };
 
   try {
-    // Make two parallel calls — one for BIN, one for auctions — to get a balanced mix
-    const binLimit = Math.ceil(limit * 0.6);
-    const auctionLimit = Math.ceil(limit * 0.4);
+    // Fetch up to 200 per buying option (eBay API max) — 2 parallel calls, 400 candidates total.
+    // backgroundJobs.js scores all results and keeps only the top 50 by deal score.
+    const EBAY_MAX_PER_REQUEST = 200;
 
     const [binData, auctionData] = await Promise.all([
       withRetry(
-        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('FIXED_PRICE', binLimit).toString()}`),
+        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('FIXED_PRICE', EBAY_MAX_PER_REQUEST).toString()}`),
         2
       ).catch(err => { if (err.statusCode === 429) throw err; return null; }),
       withRetry(
-        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('AUCTION', auctionLimit).toString()}`),
+        () => ebayFetch(`/buy/browse/v1/item_summary/search?${buildParams('AUCTION', EBAY_MAX_PER_REQUEST).toString()}`),
         2
       ).catch(err => { if (err.statusCode === 429) throw err; return null; })
     ]);
@@ -357,6 +358,7 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
       const buyingOptions = item.buyingOptions || [];
       const isAuction = buyingOptions.includes('AUCTION');
       const buyingOption = isAuction ? 'AUCTION' : 'FIXED_PRICE';
+      const acceptsBestOffer = !isAuction && buyingOptions.includes('BEST_OFFER');
       const bidPrice = isAuction ? parseFloat(item.currentBidPrice?.value || item.price?.value || 0) : null;
 
       // Shipping: eBay returns shippingOptions array; first entry has the cost
@@ -383,6 +385,7 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
         condition: item.condition || null,
         listingStatus: 'active',
         buyingOption,
+        acceptsBestOffer,
         bidCount: isAuction ? (item.bidCount || 0) : null,
         currentBidPrice: bidPrice,
         auctionEndDate: item.itemEndDate ? new Date(item.itemEndDate) : null
@@ -404,13 +407,171 @@ export async function searchListings({ cardName, set, rarity, condition, graded,
 }
 
 /**
- * Search eBay for recently sold/completed Pokemon card listings.
- * Used to establish market baseline pricing.
+ * Search eBay Finding API for real completed/sold items.
  *
- * Note: The Browse API in sandbox has limited completed items data.
- * In production, this queries real sold listings.
+ * The Finding API (findCompletedItems) returns actual sold auction and BIN
+ * results with their final selling prices — far more accurate than using
+ * active listing asking prices as a proxy.
+ *
+ * Only requires the App ID (EBAY_APP_ID), no OAuth token needed.
  */
+async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
+  const appId = process.env.EBAY_APP_ID;
+  if (!appId) return null;
+
+  const isProduction = process.env.EBAY_ENVIRONMENT === 'production';
+  const baseUrl = isProduction
+    ? 'https://svcs.ebay.com/services/search/FindingService/v1'
+    : 'https://svcs.sandbox.ebay.com/services/search/FindingService/v1';
+
+  const keywords = `${cardName}${set ? ' ' + set : ''}`;
+
+  const params = new URLSearchParams({
+    'OPERATION-NAME': 'findCompletedItems',
+    'SERVICE-VERSION': '1.13.0',
+    'SECURITY-APPNAME': appId,
+    'RESPONSE-DATA-FORMAT': 'JSON',
+    'REST-PAYLOAD': '',
+    'keywords': keywords,
+    'categoryId': POKEMON_CARDS_CATEGORY,
+    'itemFilter(0).name': 'SoldItemsOnly',
+    'itemFilter(0).value': 'true',
+    'itemFilter(1).name': 'EndTimeFrom',
+    'itemFilter(1).value': new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
+    'paginationInput.entriesPerPage': '100',
+    'sortOrder': 'EndTimeSoonest'
+  });
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  const requestUrl = `${baseUrl}?${params.toString()}`;
+  console.log(`[eBay Finding API] GET ${isProduction ? 'production' : 'sandbox'}: keywords="${keywords}", days=${days}`);
+
+  try {
+    recordRequest();
+    const response = await fetch(requestUrl, {
+      signal: controller.signal,
+      headers: { 'X-EBAY-SOA-GLOBAL-ID': 'EBAY-US' }
+    });
+    clearTimeout(timeoutId);
+
+    console.log(`[eBay Finding API] Response: HTTP ${response.status}`);
+
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const errorBody = await response.text();
+        errorDetail = errorBody.substring(0, 500);
+      } catch {}
+      console.warn(`[eBay Finding API] HTTP ${response.status} for "${keywords}": ${errorDetail}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const result = data?.findCompletedItemsResponse?.[0];
+
+    if (result?.ack?.[0] !== 'Success' && result?.ack?.[0] !== 'Warning') {
+      const errMsg = result?.errorMessage?.[0]?.error?.[0]?.message?.[0] || 'Unknown error';
+      console.warn(`[eBay Finding API] ${errMsg}`);
+      return null;
+    }
+
+    const items = result?.searchResult?.[0]?.item;
+    if (!items || items.length === 0) {
+      console.log(`[eBay Finding API] No sold items found for "${keywords}"`);
+      return null;
+    }
+
+    // Filter out graded/slabbed cards by title — the Finding API doesn't
+    // support aspect filters, so title matching is the only option.
+    const GRADED_PATTERN = /\b(PSA|CGC|BGS|SGC|AGS|ACE|GMA|MNT)\b|\bgrade[d]?\b|\bslab(bed)?\b/i;
+
+    const soldListings = items
+      .filter(item => item.sellingStatus?.[0]?.sellingState?.[0] === 'EndedWithSales')
+      .filter(item => !GRADED_PATTERN.test(item.title?.[0] || ''))
+      .map(item => {
+        const price = parseFloat(item.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ || 0);
+        const shippingInfo = item.shippingInfo?.[0];
+        const shippingType = shippingInfo?.shippingType?.[0]; // "Free", "Flat", "Calculated", etc.
+        const shippingValue = shippingInfo?.shippingServiceCost?.[0]?.__value__;
+
+        // Determine shipping cost:
+        // - Explicit cost provided → use it
+        // - shippingType is "Free" or "FreePickup" → $0
+        // - Otherwise → null (unknown)
+        let shippingCost = null;
+        if (shippingValue !== undefined) {
+          shippingCost = parseFloat(shippingValue);
+        } else if (shippingType === 'Free' || shippingType === 'FreePickup') {
+          shippingCost = 0;
+        }
+
+        const endTime = item.listingInfo?.[0]?.endTime?.[0];
+        const ebayItemId = item.itemId?.[0] || null;
+        const ebayUrl = item.viewItemURL?.[0] || null;
+        const listingTitle = item.title?.[0] || null;
+
+        return {
+          cardName,
+          set: set || null,
+          soldPrice: price,
+          shippingCost,
+          soldAt: endTime ? new Date(endTime) : new Date(),
+          source: 'eBay-sold',
+          ebayItemId,
+          ebayUrl,
+          listingTitle
+        };
+      })
+      .filter(item => item.soldPrice > 0);
+
+    const withShipping = soldListings.filter(s => s.shippingCost !== null).length;
+    console.log(`[eBay Finding API] Found ${soldListings.length} real sold comps for "${keywords}" (${withShipping} with shipping data)`);
+    return soldListings.length > 0 ? soldListings : null;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.warn('[eBay Finding API] Request timed out');
+    } else {
+      console.warn(`[eBay Finding API] ${error.message}`);
+    }
+    return null;
+  }
+}
+
+/**
+ * Search eBay for market pricing data to establish a baseline.
+ *
+ * Strategy (in order of preference):
+ * 1. Finding API: real sold/completed items with actual final selling prices
+ * 2. Browse API fallback: active listing prices with a discount factor
+ *    (less accurate — asking prices include moonshot listings)
+ * 3. Sample data: generated synthetic data for development/demo
+ */
+// Asking prices are typically higher than sold prices. This factor adjusts
+// active listing prices down to approximate what cards actually sell for.
+const ACTIVE_TO_SOLD_DISCOUNT = 0.85;
+
 export async function searchSoldListings({ cardName, set, graded, language, days = 90 }) {
+  // 1. Try Finding API for real sold comps (most accurate)
+  try {
+    console.log(`[eBay Finding API] Attempting real sold lookup for "${cardName}"${set ? ` (${set})` : ''}`);
+    const realSold = await searchCompletedSoldItems({ cardName, set, days });
+    if (realSold && realSold.length >= 3) {
+      console.log(`[eBay Finding API] Success: ${realSold.length} real sold comps, median $${realSold.map(s => s.soldPrice).sort((a,b) => a-b)[Math.floor(realSold.length/2)]}`);
+      return realSold;
+    }
+    if (realSold && realSold.length > 0) {
+      console.log(`[eBay API] Only ${realSold.length} sold comps found, supplementing with active estimates`);
+    } else {
+      console.log(`[eBay Finding API] No real sold comps returned — will fall back to active listing estimates`);
+    }
+  } catch (err) {
+    console.warn(`[eBay API] Finding API failed, falling back to active estimates:`, err.message);
+  }
+
+  // 2. Fallback: use active listing prices with discount factor
   const query = `${cardName}${set ? ' ' + set : ''}`;
 
   const params = new URLSearchParams({
@@ -420,7 +581,7 @@ export async function searchSoldListings({ cardName, set, graded, language, days
     filter: `buyingOptions:{FIXED_PRICE|AUCTION},priceCurrency:USD`
   });
 
-  // Apply same aspect filters to sold listings for accurate baseline
+  // Apply same aspect filters for accurate baseline
   const aspects = [];
   if (graded) {
     aspects.push(`Graded:{${graded === 'yes' ? 'Yes' : 'No'}}`);
@@ -441,8 +602,8 @@ export async function searchSoldListings({ cardName, set, graded, language, days
       return generateSampleSoldListings(cardName, set, days);
     }
 
-    // From active listings, use prices as market reference points
-    // (sandbox doesn't have completed items endpoint access)
+    // Use active listing prices as market reference, discounted to approximate
+    // actual sold values (Browse API doesn't have a completed items endpoint)
     const pricePoints = data.itemSummaries
       .filter(item => item.price?.value)
       .map(item => {
@@ -450,13 +611,17 @@ export async function searchSoldListings({ cardName, set, graded, language, days
         const shippingCost = shippingOption?.shippingCost?.value !== undefined
           ? parseFloat(shippingOption.shippingCost.value)
           : null;
+        const askingPrice = parseFloat(item.price.value);
+        const estimatedSoldPrice = Math.round(askingPrice * ACTIVE_TO_SOLD_DISCOUNT * 100) / 100;
         return {
           cardName,
           set: set || null,
-          soldPrice: parseFloat(item.price.value),
+          soldPrice: estimatedSoldPrice,
           shippingCost,
           soldAt: new Date(item.itemCreationDate || Date.now()),
-          source: 'eBay'
+          source: 'eBay-active-estimate',
+          ebayItemId: item.itemId || null,
+          ebayUrl: item.itemWebUrl || null
         };
       });
 
@@ -464,6 +629,7 @@ export async function searchSoldListings({ cardName, set, graded, language, days
       return generateSampleSoldListings(cardName, set, days);
     }
 
+    console.log(`[eBay API] Baseline from ${pricePoints.length} active listings (×${ACTIVE_TO_SOLD_DISCOUNT} discount applied) — active estimate, not real sold data`);
     return pricePoints;
   } catch (error) {
     if (error.statusCode === 429) throw error;
@@ -493,6 +659,15 @@ export async function fillMissingShipping(listings) {
 
   const shippingMap = new Map();
   const CONCURRENCY = 5;
+  const INTER_BATCH_DELAY_MS = 250; // Throttle to avoid rate limits
+  const MAX_RATE_LIMIT_WAITS = 3;   // Give up after 3 rate-limit pauses
+  let rateLimitWaits = 0;
+
+  // Diagnostics: track why items fail so we can debug hit rate issues
+  let apiErrors = 0;
+  let noShippingInResponse = 0;
+  let calculatedShipping = 0;
+  let nullResponses = 0;
 
   // Process items in concurrent batches of CONCURRENCY
   for (let i = 0; i < needsShipping.length; i += CONCURRENCY) {
@@ -502,32 +677,82 @@ export async function fillMissingShipping(listings) {
       batch.map(listing =>
         withRetry(
           () => ebayFetch(`/buy/browse/v1/item/${encodeURIComponent(listing.ebayListingId)}`),
-          1
+          3
         ).then(data => {
-          if (data) {
-            const shippingOption = data.shippingOptions?.[0];
-            const cost = shippingOption?.shippingCost?.value !== undefined
-              ? parseFloat(shippingOption.shippingCost.value)
-              : null;
-            if (cost !== null) {
-              shippingMap.set(data.itemId, cost);
+          if (!data) {
+            nullResponses++;
+            return;
+          }
+
+          const shippingOptions = data.shippingOptions;
+          if (!shippingOptions || shippingOptions.length === 0) {
+            noShippingInResponse++;
+            return;
+          }
+
+          // Try each shipping option for a usable cost
+          for (const option of shippingOptions) {
+            const costValue = option?.shippingCost?.value;
+            if (costValue !== undefined) {
+              shippingMap.set(data.itemId, parseFloat(costValue));
+              return;
+            }
+
+            // Calculated shipping: API knows shipping exists but cost depends
+            // on buyer location. Mark as calculated so we can estimate rather
+            // than treat as completely unknown.
+            if (option?.shippingCostType === 'CALCULATED') {
+              calculatedShipping++;
+              return;
             }
           }
+
+          // shippingOptions present but no cost in any option
+          noShippingInResponse++;
         })
       )
     );
 
-    // If we hit a rate limit, stop fetching more
-    const rateLimited = results.some(r =>
+    // Count API-level failures
+    for (const r of results) {
+      if (r.status === 'rejected' && r.reason?.statusCode !== 429) {
+        apiErrors++;
+      }
+    }
+
+    // If we hit a rate limit, wait it out and keep going (up to MAX_RATE_LIMIT_WAITS times)
+    const rateLimitedResult = results.find(r =>
       r.status === 'rejected' && r.reason?.statusCode === 429
     );
-    if (rateLimited) {
-      console.warn(`[eBay API] Rate limited during shipping fetch, stopping after ${i + CONCURRENCY} items`);
-      break;
+    if (rateLimitedResult) {
+      rateLimitWaits++;
+      if (rateLimitWaits > MAX_RATE_LIMIT_WAITS) {
+        console.warn(`[eBay API] Rate limited ${rateLimitWaits} times during shipping fetch, stopping after ${i + CONCURRENCY}/${needsShipping.length} items`);
+        break;
+      }
+      const waitMs = rateLimitedResult.reason?.retryAfterMs || 10000;
+      const waitSec = Math.round(waitMs / 1000);
+      console.log(`[eBay API] Rate limited during shipping fetch (${rateLimitWaits}/${MAX_RATE_LIMIT_WAITS}), waiting ${waitSec}s before continuing...`);
+      // Clear the rate limit cooldown so ebayFetch won't immediately reject
+      RATE_LIMIT.rateLimitedUntil = null;
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+      // Retry the items from this batch that failed
+      i -= CONCURRENCY;
+      continue;
+    }
+
+    // Small delay between batches to stay under rate limits
+    if (i + CONCURRENCY < needsShipping.length) {
+      await new Promise(resolve => setTimeout(resolve, INTER_BATCH_DELAY_MS));
     }
   }
 
-  console.log(`[eBay API] Fetched shipping for ${shippingMap.size}/${needsShipping.length} items via API`);
+  const fetched = shippingMap.size;
+  const missed = needsShipping.length - fetched;
+  console.log(
+    `[eBay API] Shipping fetch: ${fetched}/${needsShipping.length} resolved` +
+    (missed > 0 ? ` (${apiErrors} API errors, ${noShippingInResponse} no data in response, ${calculatedShipping} calculated, ${nullResponses} null responses)` : '')
+  );
 
   // Apply fetched shipping
   let result = listings.map(l => {
@@ -563,6 +788,57 @@ export async function fillMissingShipping(listings) {
   }
 
   return result;
+}
+
+/**
+ * Refresh live price/bid/status data for a batch of listings from the eBay API.
+ * Used by the alert checker to ensure alert emails contain up-to-date info.
+ *
+ * @param {string[]} itemIds - Array of eBay item IDs
+ * @returns {Map<string, { currentPrice, currentBidPrice, bidCount, auctionEndDate, listingActive }>}
+ */
+export async function refreshListingPrices(itemIds) {
+  const results = new Map();
+  const realIds = itemIds.filter(id => !id.startsWith('ebay_'));
+  if (realIds.length === 0) return results;
+
+  const CONCURRENCY = 5;
+
+  for (let i = 0; i < realIds.length; i += CONCURRENCY) {
+    const batch = realIds.slice(i, i + CONCURRENCY);
+
+    const settled = await Promise.allSettled(
+      batch.map(itemId =>
+        withRetry(
+          () => ebayFetch(`/buy/browse/v1/item/${encodeURIComponent(itemId)}`),
+          2
+        ).then(data => {
+          if (!data) return;
+          results.set(data.itemId, {
+            currentPrice: parseFloat(data.price?.value || 0),
+            currentBidPrice: data.currentBidPrice ? parseFloat(data.currentBidPrice.value) : null,
+            bidCount: data.bidCount ?? null,
+            auctionEndDate: data.itemEndDate ? new Date(data.itemEndDate) : null,
+            listingActive: !data.itemEndDate || new Date(data.itemEndDate) > new Date()
+          });
+        })
+      )
+    );
+
+    // Stop if rate limited
+    const rateLimited = settled.find(r => r.status === 'rejected' && r.reason?.statusCode === 429);
+    if (rateLimited) {
+      console.warn(`[eBay API] Rate limited during price refresh, got ${results.size}/${realIds.length}`);
+      break;
+    }
+
+    if (i + CONCURRENCY < realIds.length) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
+  console.log(`[eBay API] Refreshed prices for ${results.size}/${realIds.length} listings`);
+  return results;
 }
 
 /**

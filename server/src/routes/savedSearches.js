@@ -77,7 +77,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
       const result = await executeSearch(existing);
       const listings = await prisma.ebayListing.findMany({
         where: { searchQueryId: existing.id, listingStatus: 'active' },
-        orderBy: [{ hasTypo: 'desc' }, { dealScore: 'desc' }]
+        orderBy: { dealScore: 'desc' }
       });
       return res.json({ search: existing, listings, searchResult: result });
     }
@@ -99,7 +99,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
 
     const listings = await prisma.ebayListing.findMany({
       where: { searchQueryId: search.id, listingStatus: 'active' },
-      orderBy: [{ hasTypo: 'desc' }, { dealScore: 'desc' }]
+      orderBy: { dealScore: 'desc' }
     });
 
     res.status(201).json({
@@ -149,7 +149,7 @@ router.put('/:id', validateSearchQuery, async (req, res) => {
 
     const listings = await prisma.ebayListing.findMany({
       where: { searchQueryId: updated.id, listingStatus: 'active' },
-      orderBy: [{ hasTypo: 'desc' }, { dealScore: 'desc' }]
+      orderBy: { dealScore: 'desc' }
     });
 
     res.json({ search: updated, listings, searchResult: result });
@@ -206,7 +206,7 @@ router.post('/:id/run', async (req, res) => {
 
     const listings = await prisma.ebayListing.findMany({
       where: { searchQueryId: search.id, listingStatus: 'active' },
-      orderBy: [{ hasTypo: 'desc' }, { dealScore: 'desc' }]
+      orderBy: { dealScore: 'desc' }
     });
 
     if (!result.success) {
@@ -260,12 +260,9 @@ router.get('/:id/listings', async (req, res) => {
         searchQueryId: id,
         ...(status !== 'all' ? { listingStatus: status } : {})
       },
-      orderBy: sort === 'dealScore'
-        ? [{ hasTypo: 'desc' }, { dealScore: 'desc' }]
-        : [orderBy],
+      orderBy: [orderBy],
       include: {
         savedListing: {
-          where: { userId: req.userId },
           select: { id: true, savedAt: true }
         }
       }

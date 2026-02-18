@@ -8,15 +8,20 @@ datasource db {
 }
 
 model User {
-  id           String         @id @default(uuid()) @db.Uuid
-  username     String         @unique @db.VarChar(100)
-  email        String         @unique
-  password     String
-  createdAt    DateTime       @default(now())
-  lastActiveAt DateTime       @default(now())
-  savedListings SavedListing[]
-  searchQueries SearchQuery[]
-  chaseLists    ChaseList[]
+  id                 String         @id @default(uuid()) @db.Uuid
+  username           String         @unique @db.VarChar(100)
+  email              String         @unique
+  password           String
+  createdAt          DateTime       @default(now())
+  lastActiveAt       DateTime       @default(now())
+  // Notification settings
+  discordWebhookUrl  String?        @db.Text
+  telegramBotToken   String?        @db.VarChar(255)
+  telegramChatId     String?        @db.VarChar(100)
+  savedListings      SavedListing[]
+  searchQueries      SearchQuery[]
+  chaseLists         ChaseList[]
+  snipeAlerts        SnipeAlert[]
 }
 
 model SearchQuery {
@@ -41,13 +46,13 @@ model SearchQuery {
 
 model EbayListing {
   id                  String        @id @default(uuid()) @db.Uuid
-  ebayListingId       String        @unique
+  ebayListingId       String
   searchQueryId       String        @db.Uuid
   cardName            String        @db.VarChar(255)
   listingTitle        String        @db.VarChar(500)
   currentPrice        Decimal       @db.Decimal(10, 2)
   recentSoldPrice     Decimal?      @db.Decimal(10, 2)
-  priceGapPercent     Decimal?      @db.Decimal(6, 2)
+  priceGapPercent     Decimal?      @db.Decimal(10, 2)
   hasTypo             Boolean       @default(false)
   typoDetails         String?       @db.Text
   typoConfidenceScore Decimal?      @db.Decimal(5, 2)
@@ -66,6 +71,7 @@ model EbayListing {
   auctionEndDate      DateTime?
   shippingCost        Decimal?      @db.Decimal(10, 2)
   shippingEstimated   Boolean       @default(false)
+  acceptsBestOffer    Boolean       @default(false)
   listingStatus       ListingStatus @default(active)
   createdAt           DateTime      @default(now())
   lastCheckedAt       DateTime      @default(now())
@@ -73,6 +79,7 @@ model EbayListing {
   searchQuery         SearchQuery   @relation(fields: [searchQueryId], references: [id], onDelete: Cascade)
   savedListing        SavedListing?
 
+  @@unique([searchQueryId, ebayListingId])
   @@index([searchQueryId])
   @@index([ebayListingId])
   @@index([listingStatus])
@@ -83,7 +90,8 @@ model EbayListing {
 model SavedListing {
   id                   String        @id @default(uuid()) @db.Uuid
   userId               String        @db.Uuid
-  ebayListingId        String        @unique
+  listingId            String        @unique @db.Uuid
+  ebayListingId        String
   priceAtSave          Decimal       @db.Decimal(10, 2)
   recentSoldPriceAtSave Decimal?     @db.Decimal(10, 2)
   dealScoreAtSave      Int?          @db.SmallInt
@@ -92,11 +100,24 @@ model SavedListing {
   priceChangePercent   Decimal?      @db.Decimal(6, 2)
   status               ListingStatus @default(active)
   lastPriceCheckAt     DateTime?
+  // Portfolio tracking fields
+  purchased            Boolean       @default(false)
+  purchasePrice        Decimal?      @db.Decimal(10, 2)
+  purchasedAt          DateTime?
+  soldPrice            Decimal?      @db.Decimal(10, 2)
+  soldAt               DateTime?
+  platformFees         Decimal?      @db.Decimal(10, 2)
+  shippingPaid         Decimal?      @db.Decimal(10, 2)
+  notes                String?       @db.Text
   user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ebayListing          EbayListing   @relation(fields: [ebayListingId], references: [ebayListingId], onDelete: Cascade)
+  ebayListing          EbayListing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, ebayListingId])
   @@index([userId])
+  @@index([ebayListingId])
   @@index([status])
+  @@index([listingId])
+  @@index([purchased])
 }
 
 model RecentSoldListing {
@@ -110,10 +131,43 @@ model RecentSoldListing {
   soldAt        DateTime
   daysOld       Int?     @db.SmallInt
   source        String   @default("eBay") @db.VarChar(50)
+  ebayItemId    String?  @db.VarChar(100)
+  ebayUrl       String?  @db.Text
+  listingTitle  String?  @db.Text
   lastUpdatedAt DateTime @default(now())
 
   @@index([cardName])
   @@index([soldAt])
+}
+
+model SellerProfile {
+  id                    String   @id @default(uuid()) @db.Uuid
+  sellerName            String   @unique @db.VarChar(255)
+  totalListingsSeen     Int      @default(0)
+  dealsCount            Int      @default(0)
+  typosCount            Int      @default(0)
+  avgDealScore          Decimal? @db.Decimal(5, 2)
+  avgPriceGapPercent    Decimal? @db.Decimal(6, 2)
+  lastSeenAt            DateTime @default(now())
+  firstSeenAt           DateTime @default(now())
+  cardNames             String[] @db.VarChar(255)
+
+  @@index([dealsCount(sort: Desc)])
+  @@index([sellerName])
+}
+
+model MarketSnapshot {
+  id                String   @id @default(uuid()) @db.Uuid
+  cardName          String   @db.VarChar(255)
+  set               String?  @db.VarChar(100)
+  baselinePrice     Decimal  @db.Decimal(10, 2)
+  sampleSize        Int      @db.SmallInt
+  recencyScore      Decimal? @db.Decimal(5, 2)
+  source            String   @default("search") @db.VarChar(50)
+  capturedAt        DateTime @default(now())
+
+  @@index([cardName, capturedAt])
+  @@index([capturedAt])
 }
 
 model TypoPattern {
@@ -144,26 +198,33 @@ model BackgroundJobLog {
 }
 
 model SetCard {
-  id            String          @id @default(uuid()) @db.Uuid
-  setName       String          @db.VarChar(100)
-  cardNumber    String          @db.VarChar(20)
-  cardName      String          @db.VarChar(255)
-  rarity        String?         @db.VarChar(50)
-  cardType      String?         @db.VarChar(50)
-  imageUrl      String?
-  marketPrice   Decimal?        @db.Decimal(10, 2)
-  lastPriceUpdate DateTime?
-  createdAt     DateTime        @default(now())
+  id             String          @id @default(uuid()) @db.Uuid
+  setCode        String          @db.VarChar(20)
+  cardNumber     String          @db.VarChar(10)
+  cardName       String          @db.VarChar(255)
+  rarity         String          @db.VarChar(50)
+  imageSmall     String?         @db.Text
+  imageLarge     String?         @db.Text
+  marketPrice    Decimal?        @db.Decimal(10, 2)
+  priceLow       Decimal?        @db.Decimal(10, 2)
+  priceHigh      Decimal?        @db.Decimal(10, 2)
+  priceVariant   String?         @db.VarChar(50)
+  types          String[]        @db.VarChar(50)
+  supertype      String?         @db.VarChar(50)
+  subtypes       String[]        @db.VarChar(50)
+  hp             String?         @db.VarChar(10)
+  fetchedAt      DateTime        @default(now())
+  priceUpdatedAt DateTime        @default(now())
   chaseListCards ChaseListCard[]
 
-  @@unique([setName, cardNumber])
-  @@index([setName])
+  @@unique([setCode, cardNumber])
+  @@index([setCode])
 }
 
 model ChaseList {
   id                    String          @id @default(uuid()) @db.Uuid
   userId                String          @db.Uuid
-  setName               String          @db.VarChar(100)
+  setCode               String          @db.VarChar(20)
   alertMinPercent       Decimal         @default(10) @db.Decimal(5, 2)
   alertMaxPrice         Decimal?        @db.Decimal(10, 2)
   alertCooldownMinutes  Int             @default(60)
@@ -174,7 +235,7 @@ model ChaseList {
   user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   cards                 ChaseListCard[]
 
-  @@unique([userId, setName])
+  @@unique([userId, setCode])
   @@index([userId])
   @@index([scanEnabled])
 }
@@ -198,6 +259,48 @@ model ChaseListCard {
   @@index([status])
 }
 
+model SnipeAlert {
+  id                  String        @id @default(uuid()) @db.Uuid
+  userId              String        @db.Uuid
+  name                String        @db.VarChar(255)
+  alertType           AlertType
+  sets                String[]      @db.VarChar(100)
+  cardNames           String[]      @db.VarChar(255)
+  maxHoursRemaining   Int?          @db.SmallInt
+  maxBids             Int?          @db.SmallInt
+  minPriceGapPercent  Decimal?      @db.Decimal(5, 2)
+  maxPriceDollars     Decimal?      @db.Decimal(10, 2)
+  minDealScore        Int?          @db.SmallInt
+  enabled             Boolean       @default(true)
+  cooldownMinutes     Int           @default(60)
+  lastTriggeredAt     DateTime?
+  createdAt           DateTime      @default(now())
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertHistory        AlertHistory[]
+
+  @@index([userId])
+  @@index([enabled])
+}
+
+model AlertHistory {
+  id             String      @id @default(uuid()) @db.Uuid
+  snipeAlertId   String      @db.Uuid
+  ebayListingId  String
+  cardName       String      @db.VarChar(255)
+  listingTitle   String      @db.VarChar(500)
+  price          Decimal     @db.Decimal(10, 2)
+  marketPrice    Decimal?    @db.Decimal(10, 2)
+  priceGapPercent Decimal?   @db.Decimal(10, 2)
+  listingUrl     String
+  triggeredAt    DateTime    @default(now())
+  emailSent      Boolean     @default(false)
+  snipeAlert     SnipeAlert  @relation(fields: [snipeAlertId], references: [id], onDelete: Cascade)
+
+  @@index([snipeAlertId])
+  @@index([ebayListingId])
+  @@index([triggeredAt])
+}
+
 enum ChaseCardStatus {
   needed
   dealFound
@@ -209,6 +312,10 @@ enum Rarity {
   uncommon
   rare
   holoRare
+  ultraRare
+  illustrationRare
+  specialIllustrationRare
+  megaIllustrationRare
   other
 }
 
@@ -252,6 +359,12 @@ enum JobType {
   PriceBaseline
   SavedDealsMonitoring
   ChaseListScan
+  AlertCheck
+}
+
+enum AlertType {
+  AUCTION_ENDING
+  BIN_DEAL
 }
 
 enum JobStatus {

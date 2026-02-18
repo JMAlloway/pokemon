@@ -3,9 +3,10 @@ import prisma from '../db.js';
 
 import { validateSearchQuery } from '../middleware/validate.js';
 import { executeSearch } from '../services/backgroundJobs.js';
-import { validateCardName, getAutocompleteSuggestions, getSetSuggestions } from '../services/pokemonTcg.js';
+import { validateCardName, getAutocompleteSuggestions, getSetSuggestions, fetchTcgPlayerPrice } from '../services/pokemonTcg.js';
 import { getRateLimitStatus } from '../services/ebayApi.js';
 import { flagPriceOutliers } from '../services/dealScoring.js';
+import CARD_CATALOG, { RARITY_LABELS, RARITY_ORDER } from '../data/cardCatalog.js';
 
 const router = Router();
 
@@ -35,6 +36,15 @@ router.post('/', validateSearchQuery, async (req, res) => {
       });
     }
 
+    // Prisma only accepts enum values it was generated with.
+    // If the generated client is stale, skip persisting the rarity
+    // rather than crashing the search.
+    const PRISMA_RARITY_VALUES = [
+      'common', 'uncommon', 'rare', 'holoRare', 'ultraRare',
+      'illustrationRare', 'specialIllustrationRare', 'megaIllustrationRare', 'other'
+    ];
+    const persistableRarity = rarity && PRISMA_RARITY_VALUES.includes(rarity) ? rarity : null;
+
     // Create or find a temporary search query for this manual search
     let searchQuery = await prisma.searchQuery.findFirst({
       where: {
@@ -46,16 +56,34 @@ router.post('/', validateSearchQuery, async (req, res) => {
     });
 
     if (!searchQuery) {
-      searchQuery = await prisma.searchQuery.create({
-        data: {
-          userId: req.userId,
-          cardName: validation.name || cardName,
-          set: set || null,
-          rarity: rarity || null,
-          condition: condition || null,
-          searchFrequency: 'manual'
+      try {
+        searchQuery = await prisma.searchQuery.create({
+          data: {
+            userId: req.userId,
+            cardName: validation.name || cardName,
+            set: set || null,
+            rarity: persistableRarity,
+            condition: condition || null,
+            searchFrequency: 'manual'
+          }
+        });
+      } catch (createErr) {
+        // If rarity enum is rejected (stale Prisma client), retry without it
+        if (createErr.message?.includes('Invalid value for argument `rarity`')) {
+          searchQuery = await prisma.searchQuery.create({
+            data: {
+              userId: req.userId,
+              cardName: validation.name || cardName,
+              set: set || null,
+              rarity: null,
+              condition: condition || null,
+              searchFrequency: 'manual'
+            }
+          });
+        } else {
+          throw createErr;
         }
-      });
+      }
     }
 
     // Attach runtime filters (not persisted to SearchQuery model)
@@ -104,10 +132,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
     // Fetch the stored results
     const listings = await prisma.ebayListing.findMany({
       where: { searchQueryId: searchQuery.id, listingStatus: 'active' },
-      orderBy: [
-        { hasTypo: 'desc' },
-        { dealScore: 'desc' }
-      ]
+      orderBy: { dealScore: 'desc' }
     });
 
     // Get recent sold comps for the card
@@ -120,9 +145,6 @@ router.post('/', validateSearchQuery, async (req, res) => {
     console.log(`[Search] Returning ${listings.length} listings for "${req.body.cardName}" (${Date.now() - startTime}ms)`);
 
     // Normalize: ensure all listings show the same market baseline for this search.
-    // The per-listing recentSoldPrice can get out of sync when the same eBay listing
-    // appears in multiple search queries (the upsert overwrites the baseline but not
-    // the searchQueryId). Override with the authoritative per-search baseline.
     const normalizedListings = result.baseline != null
       ? listings.map(l => {
           const price = l.buyingOption === 'AUCTION'
@@ -143,6 +165,7 @@ router.post('/', validateSearchQuery, async (req, res) => {
       baseline: result.baseline,
       recencyScore: result.recencyScore,
       sampleSize: result.sampleSize,
+      baselineSource: result.baselineSource || 'ebay',
       searchQueryId: searchQuery.id,
       cached: false
     });
@@ -179,9 +202,153 @@ router.get('/validate', async (req, res) => {
   res.json(result);
 });
 
+// GET /api/search/catalog — Return set/card catalog for the picker UI
+router.get('/catalog', (req, res) => {
+  res.json({ sets: CARD_CATALOG, rarityLabels: RARITY_LABELS, rarityOrder: RARITY_ORDER });
+});
+
 // GET /api/search/rate-limit
 router.get('/rate-limit', (req, res) => {
   res.json(getRateLimitStatus());
+});
+
+// GET /api/search/tcg-price?cardName=Mega+Charizard+X+ex+130/094&set=Phantasmal+Flames&rarity=megaIllustrationRare
+// Diagnostic endpoint to test TCGPlayer price fetching directly.
+// Check server console for detailed [TCGPlayer] logs showing each query step.
+router.get('/tcg-price', async (req, res) => {
+  const { cardName, set, rarity } = req.query;
+  if (!cardName) {
+    return res.status(400).json({ error: 'cardName query param required' });
+  }
+  try {
+    const startTime = Date.now();
+    const result = await fetchTcgPlayerPrice({ cardName, set, rarity });
+    const elapsed = Date.now() - startTime;
+    res.json({
+      input: { cardName, set, rarity },
+      result,
+      source: result ? 'tcgplayer' : 'none',
+      elapsed: `${elapsed}ms`,
+      note: result
+        ? `TCGPlayer market=$${result.market} via ${result.variant} (${result.setName})`
+        : 'No TCGPlayer pricing found — check server console for [TCGPlayer] logs'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/search/suggestions — Smart search suggestions based on existing data.
+ *
+ * Analyzes past search performance to recommend what to search next.
+ */
+router.get('/suggestions', async (req, res) => {
+  try {
+    // 1. Cards with highest average deal scores (most profitable searches)
+    const topDealCards = await prisma.ebayListing.groupBy({
+      by: ['cardName'],
+      where: {
+        dealScore: { gte: 30 },
+        listingStatus: 'active'
+      },
+      _avg: { dealScore: true },
+      _count: { id: true },
+      orderBy: { _avg: { dealScore: 'desc' } },
+      take: 10
+    });
+
+    // 2. Cards with most typo listings (opportunity for underpriced finds)
+    const typoCards = await prisma.ebayListing.groupBy({
+      by: ['cardName'],
+      where: {
+        hasTypo: true,
+        listingStatus: 'active'
+      },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 5
+    });
+
+    // 3. Cards with recent price drops (from market snapshots)
+    const recentDrops = await prisma.$queryRaw`
+      SELECT DISTINCT ON ("cardName") "cardName", "baselinePrice", "capturedAt"
+      FROM "MarketSnapshot"
+      WHERE "capturedAt" > NOW() - INTERVAL '7 days'
+      ORDER BY "cardName", "capturedAt" DESC
+    `.catch(() => []);
+
+    const olderPrices = await prisma.$queryRaw`
+      SELECT DISTINCT ON ("cardName") "cardName", "baselinePrice", "capturedAt"
+      FROM "MarketSnapshot"
+      WHERE "capturedAt" BETWEEN NOW() - INTERVAL '14 days' AND NOW() - INTERVAL '7 days'
+      ORDER BY "cardName", "capturedAt" DESC
+    `.catch(() => []);
+
+    const olderMap = new Map(olderPrices.map(p => [p.cardName, Number(p.baselinePrice)]));
+    const priceDropSuggestions = recentDrops
+      .filter(r => olderMap.has(r.cardName))
+      .map(r => {
+        const oldPrice = olderMap.get(r.cardName);
+        const newPrice = Number(r.baselinePrice);
+        const changePct = ((newPrice - oldPrice) / oldPrice) * 100;
+        return { cardName: r.cardName, currentPrice: newPrice, previousPrice: oldPrice, changePct };
+      })
+      .filter(d => d.changePct < -10) // Only drops > 10%
+      .sort((a, b) => a.changePct - b.changePct)
+      .slice(0, 5);
+
+    // 4. Get user's existing searches to exclude
+    const existingSearches = await prisma.searchQuery.findMany({
+      where: { userId: req.userId },
+      select: { cardName: true }
+    });
+    const existingSet = new Set(existingSearches.map(s => s.cardName));
+
+    // Build suggestions
+    const suggestions = [];
+
+    for (const card of topDealCards) {
+      if (!existingSet.has(card.cardName)) {
+        suggestions.push({
+          cardName: card.cardName,
+          reason: 'high_deal_score',
+          detail: `Avg deal score: ${Math.round(card._avg.dealScore)} across ${card._count.id} listings`,
+          score: Math.round(card._avg.dealScore)
+        });
+      }
+    }
+
+    for (const card of typoCards) {
+      if (!existingSet.has(card.cardName) && !suggestions.some(s => s.cardName === card.cardName)) {
+        suggestions.push({
+          cardName: card.cardName,
+          reason: 'typo_opportunity',
+          detail: `${card._count.id} misspelled listings found`,
+          score: card._count.id * 10
+        });
+      }
+    }
+
+    for (const drop of priceDropSuggestions) {
+      if (!existingSet.has(drop.cardName) && !suggestions.some(s => s.cardName === drop.cardName)) {
+        suggestions.push({
+          cardName: drop.cardName,
+          reason: 'price_drop',
+          detail: `Price dropped ${Math.abs(drop.changePct).toFixed(1)}% ($${drop.previousPrice.toFixed(2)} → $${drop.currentPrice.toFixed(2)})`,
+          score: Math.abs(drop.changePct)
+        });
+      }
+    }
+
+    // Sort by score and limit
+    suggestions.sort((a, b) => b.score - a.score);
+
+    res.json({ suggestions: suggestions.slice(0, 10) });
+  } catch (error) {
+    console.error('Smart suggestions error:', error);
+    res.status(500).json({ error: 'Failed to generate suggestions' });
+  }
 });
 
 export default router;

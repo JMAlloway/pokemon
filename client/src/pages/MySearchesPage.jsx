@@ -67,7 +67,7 @@ export default function MySearchesPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-text-primary">My Searches</h2>
@@ -130,9 +130,9 @@ export default function MySearchesPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Search list sidebar */}
-        <div className="col-span-4 space-y-2">
+        <div className="lg:col-span-4 space-y-2">
           {isLoading && searches.length === 0 ? (
             <div className="text-center py-8 text-text-muted text-sm">Loading searches...</div>
           ) : searches.length === 0 ? (
@@ -208,7 +208,7 @@ export default function MySearchesPage() {
         </div>
 
         {/* Listings panel */}
-        <div className="col-span-8">
+        <div className="lg:col-span-8">
           {activeSearch ? (
             <>
               <div className="flex items-center justify-between mb-4">
@@ -253,8 +253,8 @@ export default function MySearchesPage() {
       {/* Delete confirmation */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setDeleteConfirm(null)} />
-          <div className="relative bg-bg-secondary border border-border rounded-xl p-6 max-w-sm w-full">
+          <div className="absolute inset-0 bg-black/60 animate-[fadeIn_150ms_ease-out]" onClick={() => setDeleteConfirm(null)} />
+          <div className="relative bg-bg-secondary border border-border rounded-xl p-6 max-w-sm w-full mx-4 animate-[scaleIn_200ms_ease-out]">
             <h3 className="text-lg font-bold text-text-primary mb-2">Delete this saved search?</h3>
             <p className="text-sm text-text-secondary mb-4">
               This will remove the search and all associated listings. Saved deals will be kept.

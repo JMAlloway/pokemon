@@ -74,7 +74,7 @@ export default function ChaseListPage() {
 
   const handleSelectList = async (list) => {
     await fetchChaseList(list.id);
-    await fetchSetCards(list.setName);
+    await fetchSetCards(list.setCode);
     setView('detail');
   };
 
@@ -122,12 +122,12 @@ export default function ChaseListPage() {
 
   // Get unique rarities and types from set cards for filtering
   const rarities = [...new Set(setCards.map(c => c.rarity).filter(Boolean))];
-  const cardTypes = [...new Set(setCards.map(c => c.cardType).filter(Boolean))];
+  const cardTypes = [...new Set(setCards.map(c => c.supertype).filter(Boolean))];
 
   // Filter set cards
   const filteredSetCards = setCards.filter(card => {
     if (filterRarity && card.rarity !== filterRarity) return false;
-    if (filterType && card.cardType !== filterType) return false;
+    if (filterType && card.supertype !== filterType) return false;
     return true;
   });
 
@@ -171,7 +171,7 @@ export default function ChaseListPage() {
                 >
                   <option value="">Select a set...</option>
                   {availableSets.map(s => (
-                    <option key={s.name} value={s.name}>{s.name} ({s.cardCount} cards)</option>
+                    <option key={s.code} value={s.code}>{s.code} ({s.cardCount} cards)</option>
                   ))}
                 </select>
               </div>
@@ -204,7 +204,7 @@ export default function ChaseListPage() {
                   onKeyDown={(e) => { if (e.key === 'Enter') handleSelectList(list); }}
                 >
                   <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-base font-bold text-text-primary">{list.setName}</h3>
+                    <h3 className="text-base font-bold text-text-primary">{list.setCode}</h3>
                     <button
                       onClick={(e) => { e.stopPropagation(); setDeleteConfirm(list.id); }}
                       className="text-xs text-text-muted hover:text-error transition-colors p-1"
@@ -277,7 +277,7 @@ export default function ChaseListPage() {
                 </svg>
               </button>
               <div>
-                <h2 className="text-xl font-bold text-text-primary">{activeList.setName}</h2>
+                <h2 className="text-xl font-bold text-text-primary">{activeList.setCode}</h2>
                 <p className="text-sm text-text-secondary mt-0.5">
                   Tap cards you still need. {selectedCards.size} selected.
                 </p>
@@ -343,8 +343,8 @@ export default function ChaseListPage() {
 
                   {/* Card image placeholder */}
                   <div className="w-full aspect-[2.5/3.5] bg-bg-tertiary rounded mb-2 flex items-center justify-center">
-                    {card.imageUrl ? (
-                      <img src={card.imageUrl} alt={card.cardName} className="w-full h-full object-cover rounded" loading="lazy" />
+                    {card.imageSmall ? (
+                      <img src={card.imageSmall} alt={card.cardName} className="w-full h-full object-cover rounded" loading="lazy" />
                     ) : (
                       <span className="text-[10px] text-text-muted text-center px-1 leading-tight">{card.cardName}</span>
                     )}
@@ -385,7 +385,7 @@ export default function ChaseListPage() {
                 </svg>
               </button>
               <div>
-                <h2 className="text-xl font-bold text-text-primary">{activeList.setName} — Chase List</h2>
+                <h2 className="text-xl font-bold text-text-primary">{activeList.setCode} — Chase List</h2>
                 {activeList.stats && (
                   <p className="text-sm text-text-secondary mt-0.5">
                     {activeList.stats.needed} needed · {activeList.stats.dealFound} deals found · {activeList.stats.purchased} purchased
@@ -398,7 +398,7 @@ export default function ChaseListPage() {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => { fetchSetCards(activeList.setName); setView('browse'); }}
+                onClick={() => { fetchSetCards(activeList.setCode); setView('browse'); }}
                 className="px-3 py-2 rounded-lg bg-bg-tertiary text-text-secondary text-sm font-medium hover:text-text-primary transition-colors"
               >
                 Edit Cards
@@ -535,8 +535,8 @@ function ChaseCardRow({ card, onStatusChange }) {
     }`}>
       {/* Card info */}
       <div className="shrink-0 w-10 h-14 bg-bg-tertiary rounded flex items-center justify-center">
-        {setCard.imageUrl ? (
-          <img src={setCard.imageUrl} alt={setCard.cardName} className="w-full h-full object-cover rounded" />
+        {setCard.imageSmall ? (
+          <img src={setCard.imageSmall} alt={setCard.cardName} className="w-full h-full object-cover rounded" />
         ) : (
           <span className="text-[8px] text-text-muted text-center leading-tight">{setCard.cardNumber}</span>
         )}

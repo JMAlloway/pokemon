@@ -1,8 +1,12 @@
 import cron from 'node-cron';
 import prisma from '../db.js';
-import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShipping } from './ebayApi.js';
+import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShipping, refreshListingPrices } from './ebayApi.js';
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
+import { fetchTcgPlayerPrice } from './pokemonTcg.js';
+import { fetchTcgdexPrice } from './tcgdex.js';
+import { sendSnipeAlertEmail } from './emailService.js';
+import { sendAlertNotifications } from './notificationService.js';
 
 const runningJobs = new Map();
 let isProcessing = false;
@@ -52,6 +56,89 @@ function filterByCardNumber(listings, searchCardName) {
 }
 
 /**
+ * Filter out non-card products that sellers list in the Pokemon cards category.
+ * Art cases, keychains, custom/proxy cards, stickers, etc. match card name searches
+ * but aren't the actual card — and their low price inflates deal scores.
+ */
+const NON_CARD_PATTERNS = [
+  // Cases & display
+  /\bart\s*case\b/i,
+  /\bartwork\s*case\b/i,
+  /\bdisplay\s*case\b/i,
+  /\bone[\s-]*touch\b/i,
+  /\btop\s*loader\b/i,
+  /\bcard\s*stand\b/i,
+  /\bframe[d]?\b/i,
+  // Accessories
+  /\bkeychain\b/i,
+  /\bkey\s*chain\b/i,
+  /\bkey\s*ring\b/i,
+  /\bpin\b(?!\s*collection)/i, // "pin" but not "pin collection" (which can be a card set)
+  /\bmagnet\b/i,
+  /\bsticker\b/i,
+  /\bpatch\b/i,
+  /\bbadge\b/i,
+  // Custom / fan-made / proxy
+  /\bcustom\b/i,
+  /\bproxy\b/i,
+  /\bfan\s*art\b/i,
+  /\bhand\s*draw/i,
+  /\bhand\s*made/i,
+  /\bhandmade\b/i,
+  /\bdiy\b/i,
+  /\borica\b/i,
+  /\bfan\s*made\b/i,
+  /\bplaytest\b/i,
+  // Other non-card products
+  /\bplush\b/i,
+  /\bfigur(?:e|ine)\b/i,
+  /\bsleeve[s]?\b/i,
+  /\bdeck\s*box\b/i,
+  /\bbinder\b/i,
+  /\bplaymat\b/i,
+  /\bplay\s*mat\b/i,
+  /\bcoin\b/i,
+  /\bdice\b/i,
+  /\bnotebook\b/i,
+  /\bposter\b/i,
+  /\bt[\s-]*shirt\b/i,
+  /\brug\b/i,
+  /\bphone\s*case\b/i,
+  /\bwallet\b/i,
+  // Repack / mystery / lot (not a specific card)
+  /\brepack\b/i,
+  /\bmystery\s*pack\b/i,
+  /\bmystery\s*box\b/i,
+  /\bsealed\s*pack\b/i,
+  // Reprints / fakes / reproductions
+  /\breprint\b/i,
+  /\breplica\b/i,
+  /\breproduction\b/i,
+  /\bcounterfeit\b/i,
+  /\bbootleg\b/i,
+  /\bfake\b/i,
+  /\bunofficial\b/i,
+  /\bnot\s*(?:official|authentic|genuine|real)\b/i,
+];
+
+function filterNonCardListings(listings) {
+  const before = listings.length;
+  const filtered = listings.filter(listing => {
+    const title = listing.listingTitle || listing.title || '';
+    const desc = listing.description || listing.shortDescription || '';
+    const textToCheck = title + ' ' + desc;
+    return !NON_CARD_PATTERNS.some(pattern => pattern.test(textToCheck));
+  });
+
+  const removed = before - filtered.length;
+  if (removed > 0) {
+    console.log(`[BackgroundJobs] Non-card filter: removed ${removed}/${before} non-card items (cases, keychains, customs, fakes, etc.)`);
+  }
+
+  return filtered;
+}
+
+/**
  * Initialize all scheduled background jobs.
  */
 export function initializeBackgroundJobs() {
@@ -89,6 +176,11 @@ export function initializeBackgroundJobs() {
     } catch (error) {
       console.error('[BackgroundJobs] Chase list scan error:', error.message);
     }
+  });
+
+  // Snipe alert checker: every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    checkSnipeAlerts();
   });
 
   console.log('[BackgroundJobs] Scheduled jobs initialized');
@@ -172,45 +264,125 @@ export async function executeSearch(searchQuery) {
 
     // 1c. Filter by card number: if the user searched for a specific card number
     //     (e.g. "130/094"), drop listings that have a *different* card number in the title
-    const relevantListings = filterByCardNumber(listingsWithShipping, searchQuery.cardName);
+    const cardNumberFiltered = filterByCardNumber(listingsWithShipping, searchQuery.cardName);
 
-    // 2. Fetch sold listings for baseline (actual sold comps only — NOT active listing prices)
-    let soldData = [];
+    // 1d. Filter out non-card products (art cases, keychains, customs, etc.)
+    const relevantListings = filterNonCardListings(cardNumberFiltered);
 
-    // Check DB for previously stored sold listings
+    // 2. Get market baseline — try TCGPlayer first (most accurate), fall back to eBay sold comps
+    let baseline;
+    let baselineSource = 'ebay';
+
+    // 2a. Try TCGPlayer market price via pokemontcg.io API
     try {
-      const storedSold = await prisma.recentSoldListing.findMany({
-        where: { cardName: searchQuery.cardName },
-        orderBy: { soldAt: 'desc' },
-        take: 100
+      const tcgPrice = await fetchTcgPlayerPrice({
+        cardName: searchQuery.cardName,
+        set: searchQuery.set,
+        rarity: searchQuery.rarity
       });
-      soldData = storedSold.map(s => ({
-        soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
-        soldAt: s.soldAt
-      }));
-    } catch (dbErr) {
-      console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
+      if (tcgPrice?.market) {
+        baseline = {
+          weightedPrice: tcgPrice.market,
+          recencyScore: 95, // TCGPlayer data is highly reliable
+          sampleSize: null  // TCGPlayer doesn't expose sample size
+        };
+        baselineSource = 'tcgplayer';
+        console.log(`[BackgroundJobs] Using TCGPlayer market price: $${tcgPrice.market} (${tcgPrice.variant}, updated ${tcgPrice.updatedAt})`);
+      }
+    } catch (tcgErr) {
+      console.warn(`[BackgroundJobs] TCGPlayer price fetch failed:`, tcgErr.message);
     }
 
-    // If no sold data in DB, fetch from eBay sold/completed API
-    if (soldData.length === 0) {
+    // 2a2. Try TCGdex as fallback (free, no auth, has TCGPlayer + Cardmarket prices)
+    if (!baseline) {
       try {
-        const { searchSoldListings } = await import('./ebayApi.js');
-        const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
-        if (freshSold.length > 0) {
-          await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
-          soldData = freshSold.map(s => ({
-            soldPrice: Number(s.soldPrice) + (s.shippingCost != null ? Number(s.shippingCost) : 0),
-            soldAt: new Date(s.soldAt)
-          }));
+        const tcgdexPrice = await fetchTcgdexPrice({
+          cardName: searchQuery.cardName,
+          set: searchQuery.set,
+          rarity: searchQuery.rarity
+        });
+        if (tcgdexPrice?.market) {
+          baseline = {
+            weightedPrice: tcgdexPrice.market,
+            recencyScore: 90,
+            sampleSize: null
+          };
+          baselineSource = 'tcgdex';
+          console.log(`[BackgroundJobs] Using TCGdex price: $${tcgdexPrice.market} (${tcgdexPrice.variant}, source: ${tcgdexPrice.source}, updated ${tcgdexPrice.updatedAt})`);
         }
-      } catch (soldErr) {
-        console.warn(`[BackgroundJobs] Could not fetch sold listings:`, soldErr.message);
+      } catch (tcgdexErr) {
+        console.warn(`[BackgroundJobs] TCGdex price fetch failed:`, tcgdexErr.message);
       }
     }
 
-    // 3. Calculate recency-weighted baseline from actual sold data
-    const baseline = calculateRecencyWeightedBaseline(soldData);
+    // 2b. Fall back to eBay sold comps if TCGPlayer/TCGdex unavailable
+    if (!baseline) {
+      let soldData = [];
+
+      // Check DB for previously stored sold listings
+      try {
+        const storedSold = await prisma.recentSoldListing.findMany({
+          where: { cardName: searchQuery.cardName },
+          orderBy: { soldAt: 'desc' },
+          take: 100
+        });
+        soldData = storedSold.map(s => ({
+          soldPrice: Number(s.soldPrice),
+          shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
+          soldAt: s.soldAt,
+          ebayUrl: s.ebayUrl || null,
+          source: s.source || 'eBay'
+        }));
+      } catch (dbErr) {
+        console.warn(`[BackgroundJobs] Could not fetch stored sold listings:`, dbErr.message);
+      }
+
+      // Fetch from eBay sold/completed API if:
+      // - No sold data in DB, OR
+      // - Less than half have shipping data, OR
+      // - Most comps are missing eBay URLs, OR
+      // - Most stored data is active listing estimates (not real sold data)
+      const shippingCoverage = soldData.length > 0
+        ? soldData.filter(s => s.shippingCost !== null).length / soldData.length
+        : 0;
+      const urlCoverage = soldData.length > 0
+        ? soldData.filter(s => s.ebayUrl).length / soldData.length
+        : 0;
+      // Check if stored data is mostly estimates rather than real sold data
+      const estimateCount = soldData.length > 0
+        ? soldData.filter(s => s.source === 'eBay-active-estimate' || s.source === 'sample').length
+        : 0;
+      const isEstimateData = soldData.length > 0 && estimateCount / soldData.length > 0.5;
+      if (isEstimateData) {
+        console.log(`[BackgroundJobs] Stored sold data is ${Math.round(estimateCount/soldData.length*100)}% estimates — forcing re-fetch`);
+      }
+      if (soldData.length === 0 || shippingCoverage < 0.5 || urlCoverage < 0.5 || isEstimateData) {
+        try {
+          const { searchSoldListings } = await import('./ebayApi.js');
+          const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
+          if (freshSold.length > 0) {
+            // Replace stored comps with fresh filtered data
+            if (soldData.length > 0) {
+              await prisma.recentSoldListing.deleteMany({
+                where: { cardName: searchQuery.cardName }
+              });
+            }
+            await storeSoldListings(freshSold, searchQuery.cardName, searchQuery.set);
+            soldData = freshSold.map(s => ({
+              soldPrice: Number(s.soldPrice),
+              shippingCost: s.shippingCost != null ? Number(s.shippingCost) : null,
+              soldAt: new Date(s.soldAt)
+            }));
+          }
+        } catch (soldErr) {
+          console.warn(`[BackgroundJobs] Could not fetch sold listings:`, soldErr.message);
+        }
+      }
+
+      // 3. Calculate recency-weighted baseline from actual sold data
+      baseline = calculateRecencyWeightedBaseline(soldData);
+      console.log(`[BackgroundJobs] Using eBay sold comps baseline: $${baseline.weightedPrice} (${baseline.sampleSize} comps)`);
+    }
 
     // 4. Analyze listings for typos
     const analyzedListings = batchAnalyzeTitles(relevantListings, searchQuery.cardName);
@@ -252,18 +424,17 @@ export async function executeSearch(searchQuery) {
       }
     }
 
-    // 6. Calculate deal scores and store listings
-    let storedCount = 0;
-    for (const listing of analyzedListings) {
+    // 6. Score all listings, then keep the top 50 BIN + top 50 Auction by deal score
+    const MAX_PER_TYPE = 50;
+
+    const scoredListings = analyzedListings.map(listing => {
       const effectivePrice = listing.buyingOption === 'AUCTION'
         ? (listing.currentBidPrice || listing.currentPrice)
         : listing.currentPrice;
       const shippingKnown = listing.shippingCost != null;
       const shipping = shippingKnown ? Number(listing.shippingCost) : 0;
-      const totalPrice = effectivePrice + shipping;
-      // Calculate price gap if we know or estimated shipping
       const priceGapPercent = baseline.weightedPrice && shippingKnown
-        ? calculatePriceGap(baseline.weightedPrice, totalPrice)
+        ? calculatePriceGap(baseline.weightedPrice, effectivePrice + shipping)
         : null;
 
       const dealScore = calculateDealScore({
@@ -276,9 +447,35 @@ export async function executeSearch(searchQuery) {
         auctionEndDate: listing.auctionEndDate
       });
 
-      // Upsert listing
+      return { listing, effectivePrice, priceGapPercent, dealScore };
+    });
+
+    // Split by buying option, sort each by score, take top 50 of each
+    const binListings = scoredListings
+      .filter(s => (s.listing.buyingOption || 'FIXED_PRICE') === 'FIXED_PRICE')
+      .sort((a, b) => b.dealScore - a.dealScore)
+      .slice(0, MAX_PER_TYPE);
+    const auctionListings = scoredListings
+      .filter(s => s.listing.buyingOption === 'AUCTION')
+      .sort((a, b) => b.dealScore - a.dealScore)
+      .slice(0, MAX_PER_TYPE);
+    const topListings = [...binListings, ...auctionListings];
+
+    const totalScored = scoredListings.length;
+    if (totalScored > topListings.length) {
+      console.log(`[BackgroundJobs] Scored ${totalScored} listings, keeping top ${binListings.length} BIN + ${auctionListings.length} Auction by deal score`);
+    }
+
+    // Store only the top listings
+    let storedCount = 0;
+    for (const { listing, effectivePrice, priceGapPercent, dealScore } of topListings) {
       await prisma.ebayListing.upsert({
-        where: { ebayListingId: listing.ebayListingId },
+        where: {
+          searchQueryId_ebayListingId: {
+            searchQueryId: searchQuery.id,
+            ebayListingId: listing.ebayListingId
+          }
+        },
         create: {
           ebayListingId: listing.ebayListingId,
           searchQueryId: searchQuery.id,
@@ -305,6 +502,7 @@ export async function executeSearch(searchQuery) {
           auctionEndDate: listing.auctionEndDate,
           shippingCost: listing.shippingCost,
           shippingEstimated: listing.shippingEstimated || false,
+          acceptsBestOffer: listing.acceptsBestOffer || false,
           listingStatus: listing.listingStatus || 'active'
         },
         update: {
@@ -317,12 +515,14 @@ export async function executeSearch(searchQuery) {
           dealScore,
           recencyScore: baseline.recencyScore,
           sellerFeedbackPercent: listing.sellerFeedbackPercent,
+          description: listing.description,
           buyingOption: listing.buyingOption || 'FIXED_PRICE',
           bidCount: listing.bidCount,
           currentBidPrice: listing.currentBidPrice,
           auctionEndDate: listing.auctionEndDate,
           shippingCost: listing.shippingCost,
           shippingEstimated: listing.shippingEstimated || false,
+          acceptsBestOffer: listing.acceptsBestOffer || false,
           listingStatus: listing.listingStatus || 'active',
           lastCheckedAt: new Date()
         }
@@ -331,21 +531,26 @@ export async function executeSearch(searchQuery) {
       storedCount++;
     }
 
-    // 7. Reconcile baseline: ensure ALL listings for this search query share the
-    //    same recentSoldPrice. Other search queries may have overwritten some
-    //    listings' baselines via the upsert update path (the update doesn't change
-    //    searchQueryId, so cross-search contamination can occur).
-    if (baseline.weightedPrice != null) {
-      await prisma.ebayListing.updateMany({
-        where: { searchQueryId: searchQuery.id },
-        data: {
-          recentSoldPrice: baseline.weightedPrice,
-          recencyScore: baseline.recencyScore
+    // Remove listings that fell out of the top results
+    const keptIds = new Set(topListings.map(t => t.listing.ebayListingId));
+    const existingForQuery = await prisma.ebayListing.findMany({
+      where: { searchQueryId: searchQuery.id },
+      select: { ebayListingId: true }
+    });
+    const toRemove = existingForQuery
+      .map(l => l.ebayListingId)
+      .filter(id => !keptIds.has(id));
+    if (toRemove.length > 0) {
+      await prisma.ebayListing.deleteMany({
+        where: {
+          searchQueryId: searchQuery.id,
+          ebayListingId: { in: toRemove }
         }
       });
+      console.log(`[BackgroundJobs] Pruned ${toRemove.length} lower-scored listings for "${searchQuery.cardName}"`);
     }
 
-    // 8. Update search query timestamp
+    // 7. Update search query timestamp
     await prisma.searchQuery.update({
       where: { id: searchQuery.id },
       data: { lastExecutedAt: new Date() }
@@ -361,14 +566,23 @@ export async function executeSearch(searchQuery) {
       }
     });
 
-    console.log(`[BackgroundJobs] Search complete for "${searchQuery.cardName}": ${storedCount} listings stored, baseline=$${baseline.weightedPrice}`);
+    // 9. Track seller intelligence — accumulate seller stats across searches
+    await updateSellerProfiles(topListings, searchQuery.cardName);
+
+    // 10. Capture market snapshot for volatility tracking
+    if (baseline.weightedPrice) {
+      await captureMarketSnapshot(searchQuery.cardName, searchQuery.set, baseline);
+    }
+
+    console.log(`[BackgroundJobs] Search complete for "${searchQuery.cardName}": ${storedCount} listings stored, baseline=$${baseline.weightedPrice} (${baselineSource})`);
 
     return {
       success: true,
       listingsFound: storedCount,
       baseline: baseline.weightedPrice,
       recencyScore: baseline.recencyScore,
-      sampleSize: baseline.sampleSize
+      sampleSize: baseline.sampleSize,
+      baselineSource
     };
   } catch (error) {
     console.error(`[BackgroundJobs] Search failed for "${searchQuery.cardName}":`, error.message, error.stack);
@@ -475,7 +689,10 @@ async function storeSoldListings(soldListings, cardName, set) {
           shippingCost: shipping,
           soldAt: new Date(sold.soldAt),
           daysOld: Math.min(90, daysOld),
-          source: sold.source || 'eBay'
+          source: sold.source || 'eBay',
+          ebayItemId: sold.ebayItemId || null,
+          ebayUrl: sold.ebayUrl || null,
+          listingTitle: sold.listingTitle || null
         }
       });
     } catch {
@@ -488,6 +705,319 @@ async function storeSoldListings(soldListings, cardName, set) {
   cutoffDate.setDate(cutoffDate.getDate() - 90);
   await prisma.recentSoldListing.deleteMany({
     where: { soldAt: { lt: cutoffDate } }
+  });
+}
+
+/**
+ * Update seller profiles with data from this search's listings.
+ * Tracks total listings seen, deals count, typos count, and average deal score.
+ */
+async function updateSellerProfiles(scoredListings, cardName) {
+  // Group listings by seller
+  const sellerMap = new Map();
+  for (const { listing, dealScore } of scoredListings) {
+    const name = listing.sellerName;
+    if (!name) continue;
+    if (!sellerMap.has(name)) {
+      sellerMap.set(name, { listings: [], dealScores: [], priceGaps: [], typos: 0 });
+    }
+    const entry = sellerMap.get(name);
+    entry.listings.push(listing);
+    entry.dealScores.push(dealScore);
+    if (listing.hasTypo) entry.typos++;
+  }
+
+  for (const [sellerName, data] of sellerMap) {
+    const isDeal = (score) => score >= 40;
+    const newDeals = data.dealScores.filter(isDeal).length;
+    const avgScore = data.dealScores.reduce((a, b) => a + b, 0) / data.dealScores.length;
+
+    try {
+      const existing = await prisma.sellerProfile.findUnique({
+        where: { sellerName }
+      });
+
+      if (existing) {
+        const totalListings = existing.totalListingsSeen + data.listings.length;
+        const totalDeals = existing.dealsCount + newDeals;
+        const totalTypos = existing.typosCount + data.typos;
+        // Running average of deal scores
+        const prevWeight = existing.totalListingsSeen;
+        const newWeight = data.listings.length;
+        const combinedAvg = (Number(existing.avgDealScore || 0) * prevWeight + avgScore * newWeight) / totalListings;
+
+        // Add new card name if not already tracked
+        const cardNames = existing.cardNames || [];
+        if (!cardNames.includes(cardName)) {
+          cardNames.push(cardName);
+        }
+
+        await prisma.sellerProfile.update({
+          where: { sellerName },
+          data: {
+            totalListingsSeen: totalListings,
+            dealsCount: totalDeals,
+            typosCount: totalTypos,
+            avgDealScore: Math.round(combinedAvg * 100) / 100,
+            lastSeenAt: new Date(),
+            cardNames
+          }
+        });
+      } else {
+        await prisma.sellerProfile.create({
+          data: {
+            sellerName,
+            totalListingsSeen: data.listings.length,
+            dealsCount: newDeals,
+            typosCount: data.typos,
+            avgDealScore: Math.round(avgScore * 100) / 100,
+            lastSeenAt: new Date(),
+            firstSeenAt: new Date(),
+            cardNames: [cardName]
+          }
+        });
+      }
+    } catch (err) {
+      // Non-critical — don't fail the search over seller tracking
+      console.warn(`[BackgroundJobs] Seller profile update failed for "${sellerName}":`, err.message);
+    }
+  }
+}
+
+/**
+ * Capture a market snapshot for volatility tracking.
+ * Stores the baseline price at the time of each search so we can detect
+ * week-over-week price shifts.
+ */
+async function captureMarketSnapshot(cardName, set, baseline) {
+  try {
+    await prisma.marketSnapshot.create({
+      data: {
+        cardName,
+        set: set || null,
+        baselinePrice: baseline.weightedPrice,
+        sampleSize: baseline.sampleSize ?? 0,
+        recencyScore: baseline.recencyScore,
+        source: 'search'
+      }
+    });
+
+    // Clean up old snapshots (keep last 90 days)
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
+    await prisma.marketSnapshot.deleteMany({
+      where: { cardName, capturedAt: { lt: cutoff } }
+    });
+  } catch (err) {
+    console.warn(`[BackgroundJobs] Market snapshot failed for "${cardName}":`, err.message);
+  }
+}
+
+/**
+ * Check all enabled snipe alerts and send emails for matching listings.
+ * Runs every 5 minutes.
+ */
+export async function checkSnipeAlerts() {
+  try {
+    const alerts = await prisma.snipeAlert.findMany({
+      where: { enabled: true }
+    });
+
+    if (alerts.length === 0) return;
+    console.log(`[AlertChecker] Checking ${alerts.length} snipe alerts`);
+
+    for (const alert of alerts) {
+      try {
+        await processAlert(alert);
+      } catch (err) {
+        console.error(`[AlertChecker] Error processing alert "${alert.name}":`, err.message);
+      }
+    }
+  } catch (error) {
+    console.error('[AlertChecker] Fatal error:', error.message);
+  }
+}
+
+async function processAlert(alert) {
+  const now = new Date();
+
+  // Build the query based on alert type
+  const where = {
+    listingStatus: 'active'
+  };
+
+  if (alert.alertType === 'AUCTION_ENDING') {
+    where.buyingOption = 'AUCTION';
+    // Auction must be ending within maxHoursRemaining
+    const maxH = alert.maxHoursRemaining || 6;
+    where.auctionEndDate = {
+      gt: now,
+      lte: new Date(Date.now() + maxH * 60 * 60 * 1000)
+    };
+    if (alert.maxBids != null) {
+      where.bidCount = { lte: alert.maxBids };
+    }
+  } else {
+    // BIN_DEAL
+    where.buyingOption = 'FIXED_PRICE';
+  }
+
+  // Price gap filter
+  if (alert.minPriceGapPercent != null) {
+    where.priceGapPercent = { gte: Number(alert.minPriceGapPercent) };
+  } else {
+    where.priceGapPercent = { gt: 0 };
+  }
+
+  // Max price filter
+  if (alert.maxPriceDollars != null) {
+    where.currentPrice = { lte: Number(alert.maxPriceDollars) };
+  }
+
+  // Deal score filter
+  if (alert.minDealScore != null) {
+    where.dealScore = { gte: alert.minDealScore };
+  }
+
+  // Set filter
+  if (alert.sets && alert.sets.length > 0) {
+    where.searchQuery = { set: { in: alert.sets } };
+  }
+
+  // Card name filter
+  if (alert.cardNames && alert.cardNames.length > 0) {
+    where.cardName = { in: alert.cardNames };
+  }
+
+  const listings = await prisma.ebayListing.findMany({
+    where,
+    orderBy: alert.alertType === 'AUCTION_ENDING'
+      ? [{ auctionEndDate: 'asc' }]
+      : [{ dealScore: 'desc' }],
+    include: {
+      searchQuery: { select: { cardName: true, set: true } }
+    },
+    take: 20
+  });
+
+  if (listings.length === 0) return;
+
+  // Filter out listings already alerted within cooldown
+  const cooldownCutoff = new Date(Date.now() - alert.cooldownMinutes * 60 * 1000);
+  const recentAlerts = await prisma.alertHistory.findMany({
+    where: {
+      snipeAlertId: alert.id,
+      triggeredAt: { gte: cooldownCutoff }
+    },
+    select: { ebayListingId: true }
+  });
+  const alertedIds = new Set(recentAlerts.map(a => a.ebayListingId));
+
+  const newListings = listings.filter(l => !alertedIds.has(l.ebayListingId));
+  if (newListings.length === 0) return;
+
+  console.log(`[AlertChecker] Alert "${alert.name}": ${newListings.length} new matches, refreshing prices...`);
+
+  // Refresh live prices/bids from eBay before alerting
+  const liveData = await refreshListingPrices(newListings.map(l => l.ebayListingId));
+
+  // Update DB records and filter out sold/ended listings
+  const liveListings = [];
+  for (const l of newListings) {
+    const live = liveData.get(l.ebayListingId);
+    if (live) {
+      // Update DB with fresh data
+      const updateData = {
+        currentPrice: live.currentPrice,
+        lastCheckedAt: new Date()
+      };
+      if (live.currentBidPrice != null) updateData.currentBidPrice = live.currentBidPrice;
+      if (live.bidCount != null) updateData.bidCount = live.bidCount;
+      if (live.auctionEndDate) updateData.auctionEndDate = live.auctionEndDate;
+      if (!live.listingActive) updateData.listingStatus = 'sold';
+
+      await prisma.ebayListing.update({
+        where: { id: l.id },
+        data: updateData
+      });
+
+      // Skip sold/ended listings
+      if (!live.listingActive) {
+        console.log(`[AlertChecker] Skipping "${l.cardName}" — listing ended/sold`);
+        continue;
+      }
+
+      // Use live price data
+      liveListings.push({
+        ...l,
+        currentPrice: live.currentPrice,
+        currentBidPrice: live.currentBidPrice ?? l.currentBidPrice,
+        bidCount: live.bidCount ?? l.bidCount,
+        auctionEndDate: live.auctionEndDate || l.auctionEndDate
+      });
+    } else {
+      // API didn't return data — use DB values as fallback
+      liveListings.push(l);
+    }
+  }
+
+  if (liveListings.length === 0) {
+    console.log(`[AlertChecker] Alert "${alert.name}": all matches ended/sold after price refresh`);
+    return;
+  }
+
+  console.log(`[AlertChecker] Alert "${alert.name}": sending ${liveListings.length} listings with live prices`);
+
+  // Format for email with live data — recalculate gap from live price
+  const minGap = alert.minPriceGapPercent != null ? Number(alert.minPriceGapPercent) : 0;
+  const emailListings = liveListings.map(l => {
+    const hoursRemaining = l.auctionEndDate
+      ? (new Date(l.auctionEndDate) - Date.now()) / (1000 * 60 * 60)
+      : null;
+    const livePrice = Number(l.currentBidPrice || l.currentPrice);
+    const marketPrice = l.recentSoldPrice ? Number(l.recentSoldPrice) : null;
+    return {
+      cardName: l.cardName,
+      listingTitle: l.listingTitle,
+      price: livePrice,
+      marketPrice,
+      priceGapPercent: calculatePriceGap(marketPrice, livePrice),
+      dealScore: l.dealScore,
+      listingUrl: l.listingUrl,
+      hoursRemaining: hoursRemaining != null ? Math.round(hoursRemaining * 10) / 10 : null,
+      bidCount: l.bidCount
+    };
+  }).filter(l => l.priceGapPercent != null && l.priceGapPercent >= minGap);
+
+  if (emailListings.length === 0) {
+    console.log(`[AlertChecker] Alert "${alert.name}": all matches below ${minGap}% gap after live price refresh`);
+    return;
+  }
+
+  // Send notifications (email + Discord + Telegram)
+  const emailSent = await sendAlertNotifications({ alert, listings: emailListings });
+
+  // Record alert history with live prices and recalculated gap
+  for (const el of emailListings) {
+    await prisma.alertHistory.create({
+      data: {
+        snipeAlertId: alert.id,
+        ebayListingId: liveListings.find(l => l.listingUrl === el.listingUrl)?.ebayListingId || 'unknown',
+        cardName: el.cardName,
+        listingTitle: el.listingTitle,
+        price: el.price,
+        marketPrice: el.marketPrice,
+        priceGapPercent: el.priceGapPercent,
+        listingUrl: el.listingUrl,
+        emailSent
+      }
+    });
+  }
+
+  // Update last triggered
+  await prisma.snipeAlert.update({
+    where: { id: alert.id },
+    data: { lastTriggeredAt: now }
   });
 }
 

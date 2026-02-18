@@ -101,10 +101,18 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'eBay listing ID required' });
     }
 
-    // Find the listing
-    const listing = await prisma.ebayListing.findUnique({
-      where: { ebayListingId }
-    });
+    // Find the listing — ebayListingId may exist in multiple search queries,
+    // so use findFirst. The searchQueryId param can target a specific snapshot.
+    const { searchQueryId } = req.body;
+    const listing = searchQueryId
+      ? await prisma.ebayListing.findUnique({
+          where: {
+            searchQueryId_ebayListingId: { searchQueryId, ebayListingId }
+          }
+        })
+      : await prisma.ebayListing.findFirst({
+          where: { ebayListingId }
+        });
 
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
@@ -114,9 +122,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'This listing is no longer available' });
     }
 
-    // Check for existing saved deal
+    // Check for existing saved deal (by internal listing ID — per-search snapshot)
     const existing = await prisma.savedListing.findUnique({
-      where: { ebayListingId }
+      where: { listingId: listing.id }
     });
 
     if (existing) {
@@ -126,6 +134,7 @@ router.post('/', async (req, res) => {
     const savedDeal = await prisma.savedListing.create({
       data: {
         userId: req.userId,
+        listingId: listing.id,
         ebayListingId: listing.ebayListingId,
         priceAtSave: listing.currentPrice,
         recentSoldPriceAtSave: listing.recentSoldPrice,

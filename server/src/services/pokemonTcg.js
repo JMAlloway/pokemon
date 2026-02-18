@@ -1,8 +1,11 @@
 import { KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS } from './typoDetection.js';
 import { similarityScore } from '../utils/levenshtein.js';
+import CARD_CATALOG, { CATALOG_CARD_NAMES, CATALOG_SET_NAMES } from '../data/cardCatalog.js';
 
-// Combined list of all known card names (Pokemon + Trainers)
-const ALL_KNOWN_CARDS = [...KNOWN_POKEMON_NAMES, ...KNOWN_TRAINER_CARDS];
+// Combined list of all known card names (Pokemon + Trainers + Catalog)
+const ALL_KNOWN_CARDS = [
+  ...new Set([...KNOWN_POKEMON_NAMES, ...KNOWN_TRAINER_CARDS, ...CATALOG_CARD_NAMES])
+];
 
 // Pattern: card number like "118/094" or "013/094"
 const CARD_NUMBER_PATTERN = /\b\d{1,3}\s*\/\s*\d{2,3}\b/;
@@ -19,8 +22,8 @@ const CARD_NUMBER_PATTERN = /\b\d{1,3}\s*\/\s*\d{2,3}\b/;
 
 const POKEMON_TCG_API_BASE = 'https://api.pokemontcg.io/v2';
 
-// Extended card database with sets
-const POKEMON_SETS = [
+// Extended card database with sets (merged from static list + catalog)
+const STATIC_SETS = [
   'Base Set', 'Jungle', 'Fossil', 'Team Rocket', 'Gym Heroes', 'Gym Challenge',
   'Neo Genesis', 'Neo Discovery', 'Neo Revelation', 'Neo Destiny',
   'Expedition', 'Aquapolis', 'Skyridge',
@@ -44,6 +47,7 @@ const POKEMON_SETS = [
   'Shrouded Fable', 'Stellar Crown', 'Surging Sparks', 'Prismatic Evolutions',
   'Mega Evolution', 'Phantasmal Flames'
 ];
+const POKEMON_SETS = [...new Set([...STATIC_SETS, ...CATALOG_SET_NAMES])];
 
 const CARD_TYPES = ['V', 'VMAX', 'VSTAR', 'ex', 'EX', 'GX', 'Tag Team', 'BREAK',
   'Mega', 'Level X', 'Prime', 'LEGEND', 'Full Art', 'Alt Art',
@@ -52,6 +56,16 @@ const CARD_TYPES = ['V', 'VMAX', 'VSTAR', 'ex', 'EX', 'GX', 'Tag Team', 'BREAK',
 
 let pokemonTcgCache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const CACHE_MAX_SIZE = 500;
+
+function cachePut(cache, key, value, maxSize = CACHE_MAX_SIZE) {
+  if (cache.size >= maxSize) {
+    // Evict oldest entry (first key in Map insertion order)
+    const firstKey = cache.keys().next().value;
+    cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
 
 /**
  * Validate if a card name exists in Pokemon TCG database.
@@ -115,7 +129,7 @@ export async function validateCardName(cardName) {
           name: data.data[0].name,
           suggestions: data.data.map(c => c.name).slice(0, 5)
         };
-        pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+        cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
         return result;
       }
     }
@@ -128,7 +142,7 @@ export async function validateCardName(cardName) {
     const topScore = similarityScore(cardName, suggestions[0]);
     if (topScore >= 80) {
       const result = { valid: true, name: suggestions[0], suggestions };
-      pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
       return result;
     }
   }
@@ -142,7 +156,7 @@ export async function validateCardName(cardName) {
       : 'Card not found in Pokemon database. Please check the spelling.'
   };
 
-  pokemonTcgCache.set(cacheKey, { data: result, timestamp: Date.now() });
+  cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
   return result;
 }
 
@@ -184,6 +198,299 @@ export function getSetSuggestions(partial) {
   if (!partial || partial.length < 2) return POKEMON_SETS.slice(0, 10);
   const normalized = partial.toLowerCase();
   return POKEMON_SETS.filter(s => s.toLowerCase().includes(normalized)).slice(0, 10);
+}
+
+/**
+ * Fetch TCGPlayer market price via the pokemontcg.io API.
+ *
+ * The pokemontcg.io card response includes a `tcgplayer.prices` object keyed by
+ * variant (e.g. "holofoil", "normal", "reverseHolofoil"). Each variant has:
+ *   { low, mid, high, market, directLow }
+ *
+ * We pick the best variant based on rarity and return the `market` price,
+ * which is the official TCGPlayer Market Price.
+ *
+ * Uses a cascading query strategy: if the most specific query (name + set + number)
+ * returns no results, progressively broader queries are tried so new sets that
+ * pokemontcg.io hasn't indexed yet can still resolve via name + number alone.
+ *
+ * @param {{ cardName: string, set?: string, cardNumber?: string, rarity?: string }} opts
+ * @returns {Promise<{ market: number, low: number, mid: number, high: number, updatedAt: string, variant: string } | null>}
+ */
+// Hard ceiling for the entire TCGPlayer lookup (set resolution + card queries).
+// If pokemontcg.io is slow or down, we bail out and let the caller fall through
+// to eBay-based pricing instead of blocking the whole search.
+const TCGPLAYER_OVERALL_TIMEOUT_MS = 8000;
+
+export async function fetchTcgPlayerPrice({ cardName, set, cardNumber, rarity }) {
+  // Build cache key
+  const cacheKey = `tcgprice_${cardName}_${set || ''}_${cardNumber || ''}`;
+  const cached = pokemonTcgCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Wrap the entire lookup in a hard timeout so a slow pokemontcg.io API
+  // never blocks the search response. Returns null on timeout.
+  try {
+    const result = await Promise.race([
+      _fetchTcgPlayerPriceInner({ cardName, set, cardNumber, rarity, cacheKey }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('TCGPlayer overall timeout')), TCGPLAYER_OVERALL_TIMEOUT_MS)
+      )
+    ]);
+    return result;
+  } catch (err) {
+    console.warn(`[TCGPlayer] Aborted: ${err.message} — falling through to eBay`);
+    cachePut(pokemonTcgCache, cacheKey, { data: null, timestamp: Date.now() });
+    return null;
+  }
+}
+
+async function _fetchTcgPlayerPriceInner({ cardName, set, cardNumber, rarity, cacheKey }) {
+  // Use API key for higher rate limits if configured
+  const apiKey = process.env.POKEMON_TCG_API_KEY;
+  const headers = apiKey ? { 'X-Api-Key': apiKey } : {};
+
+  // Strip card number from card name for the API query
+  // e.g. "Mega Charizard X ex 130/094" → "Mega Charizard X ex"
+  const baseName = cardName.replace(/\s*\d{1,3}\s*\/\s*\d{2,3}\s*$/, '').trim();
+
+  // Extract just the card number (e.g. "130" from "130/094")
+  const numberMatch = (cardNumber || cardName).match(/(\d{1,3})\s*\/\s*\d{2,3}/);
+  const number = numberMatch ? numberMatch[1].replace(/^0+/, '') : null;
+
+  // Step 1: Discover the actual pokemontcg.io set ID.
+  let resolvedSetId = null;
+  if (set) {
+    resolvedSetId = await resolveSetId(set, headers);
+  }
+
+  // Step 2: Build cascading card queries using the resolved set ID.
+  const queries = [];
+
+  if (resolvedSetId && number) {
+    queries.push({ q: `set.id:"${resolvedSetId}" number:"${number}"`, label: `setId(${resolvedSetId})+number` });
+  }
+  if (resolvedSetId) {
+    queries.push({ q: `set.id:"${resolvedSetId}" name:"${baseName}"`, label: `setId(${resolvedSetId})+name` });
+  }
+  if (number) {
+    queries.push({ q: `name:"${baseName}" number:"${number}"`, label: 'name+number' });
+  }
+  queries.push({ q: `name:"${baseName}"`, label: 'name-only' });
+
+  // Deduplicate queries
+  const seen = new Set();
+  const uniqueQueries = queries.filter(({ q }) => {
+    if (seen.has(q)) return false;
+    seen.add(q);
+    return true;
+  });
+
+  for (const { q, label } of uniqueQueries) {
+    const url = `${POKEMON_TCG_API_BASE}/cards?q=${encodeURIComponent(q)}&pageSize=10&select=name,number,set,tcgplayer,rarity`;
+
+    try {
+      console.log(`[TCGPlayer] Trying ${label}: ${q}`);
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (!response.ok) {
+        console.warn(`[TCGPlayer] API returned ${response.status} for ${label}`);
+        continue;
+      }
+
+      const data = await response.json();
+      if (!data.data || data.data.length === 0) {
+        console.log(`[TCGPlayer] No results for ${label}`);
+        continue;
+      }
+
+      console.log(`[TCGPlayer] Got ${data.data.length} results for ${label}: ${data.data.map(c => `${c.name} #${c.number} (${c.set?.name})`).join(', ')}`);
+
+      // Pick the best matching card from results
+      const card = pickBestCard(data.data, { baseName, number, set, resolvedSetId });
+      if (!card) {
+        console.log(`[TCGPlayer] No suitable match in ${data.data.length} results for ${label}`);
+        continue;
+      }
+
+      if (!card.tcgplayer?.prices) {
+        console.log(`[TCGPlayer] No pricing data for ${card.name} (${card.set?.name})`);
+        continue;
+      }
+
+      // Pick the best price variant based on rarity
+      const variant = pickPriceVariant(card.tcgplayer.prices, rarity);
+      if (!variant) {
+        console.log(`[TCGPlayer] No usable price variant for ${card.name}, available: ${Object.keys(card.tcgplayer.prices).join(', ')}`);
+        continue;
+      }
+
+      const prices = card.tcgplayer.prices[variant];
+      if (!prices.market && !prices.mid) {
+        console.log(`[TCGPlayer] No market/mid price for ${card.name} (${variant})`);
+        continue;
+      }
+
+      const result = {
+        market: prices.market || prices.mid,
+        low: prices.low || null,
+        mid: prices.mid || null,
+        high: prices.high || null,
+        directLow: prices.directLow || null,
+        updatedAt: card.tcgplayer.updatedAt || null,
+        variant,
+        cardName: card.name,
+        setName: card.set?.name || set
+      };
+
+      console.log(`[TCGPlayer] Found via ${label}: ${card.name} (${card.set?.name}) ${variant}: market=$${result.market}`);
+      cachePut(pokemonTcgCache, cacheKey, { data: result, timestamp: Date.now() });
+      return result;
+    } catch (err) {
+      console.warn(`[TCGPlayer] ${label} failed:`, err.message);
+      continue;
+    }
+  }
+
+  console.log(`[TCGPlayer] All queries exhausted for "${baseName}" — no pricing found`);
+  cachePut(pokemonTcgCache, cacheKey, { data: null, timestamp: Date.now() });
+  return null;
+}
+
+// Cache for resolved set IDs (set name → pokemontcg.io set ID)
+const setIdCache = new Map();
+
+/**
+ * Resolve a set name to a pokemontcg.io set ID.
+ * Handles mismatches like "Phantasmal Flames" → "Mega Evolution: Phantasmal Flames" (id: "mev2")
+ * by searching the /v2/sets endpoint for partial matches.
+ */
+async function resolveSetId(setName, headers = {}) {
+  // Check cache first
+  const cacheKey = `setid_${setName}`;
+  const cached = setIdCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Also look up catalog code
+  const catalogSet = CARD_CATALOG.find(s => s.name === setName);
+  const catalogCode = catalogSet?.code?.toLowerCase() || null;
+
+  // Try multiple set search strategies
+  const setQueries = [
+    // Exact name match
+    `name:"${setName}"`,
+    // Partial name match (for "Phantasmal Flames" inside "Mega Evolution: Phantasmal Flames")
+    `name:"${setName.split(' ').slice(-1)[0]}"`,
+  ];
+  // Add catalog code if available
+  if (catalogCode) {
+    setQueries.push(`id:"${catalogCode}"`);
+  }
+
+  for (const sq of setQueries) {
+    try {
+      const url = `${POKEMON_TCG_API_BASE}/sets?q=${encodeURIComponent(sq)}&select=id,name`;
+      console.log(`[TCGPlayer] Resolving set: ${sq}`);
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(4000)
+      });
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      if (!data.data || data.data.length === 0) continue;
+
+      // Find the best matching set
+      const setNameLower = setName.toLowerCase();
+      const exactMatch = data.data.find(s => s.name.toLowerCase() === setNameLower);
+      const containsMatch = data.data.find(s => s.name.toLowerCase().includes(setNameLower));
+      const codeMatch = catalogCode ? data.data.find(s => s.id.toLowerCase() === catalogCode) : null;
+      const match = exactMatch || containsMatch || codeMatch || data.data[0];
+
+      console.log(`[TCGPlayer] Resolved set "${setName}" → id="${match.id}" (API name: "${match.name}")`);
+      cachePut(setIdCache, cacheKey, { data: match.id, timestamp: Date.now() }, 200);
+      return match.id;
+    } catch (err) {
+      console.warn(`[TCGPlayer] Set resolve failed for "${sq}":`, err.message);
+      continue;
+    }
+  }
+
+  console.log(`[TCGPlayer] Could not resolve set: "${setName}"`);
+  cachePut(setIdCache, cacheKey, { data: null, timestamp: Date.now() }, 200);
+  return null;
+}
+
+/**
+ * Pick the best matching card from API results.
+ * Prefers: exact number match in the expected set > exact number in any set > first result.
+ */
+function pickBestCard(cards, { baseName, number, set, resolvedSetId }) {
+  if (cards.length === 1) return cards[0];
+
+  // Filter to cards that have TCGPlayer pricing
+  const withPricing = cards.filter(c => c.tcgplayer?.prices);
+  const pool = withPricing.length > 0 ? withPricing : cards;
+
+  // Best: exact number + matching set (by ID or partial name)
+  if (number && (resolvedSetId || set)) {
+    const setNameLower = set?.toLowerCase();
+    const match = pool.find(c =>
+      String(c.number) === number &&
+      (c.set?.id === resolvedSetId ||
+       c.set?.name?.toLowerCase() === setNameLower ||
+       c.set?.name?.toLowerCase().includes(setNameLower))
+    );
+    if (match) return match;
+  }
+
+  // Good: exact number match (any set)
+  if (number) {
+    const match = pool.find(c => String(c.number) === number);
+    if (match) return match;
+  }
+
+  // Fallback: first card with pricing
+  return pool[0] || cards[0];
+}
+
+/**
+ * Pick the most appropriate TCGPlayer price variant for a card.
+ * Variants include: holofoil, normal, reverseHolofoil, 1stEditionHolofoil, etc.
+ */
+function pickPriceVariant(prices, rarity) {
+  const variants = Object.keys(prices);
+  if (variants.length === 0) return null;
+  if (variants.length === 1) return variants[0];
+
+  // For high-rarity cards, prefer holofoil
+  const highRarities = ['ultraRare', 'illustrationRare', 'specialIllustrationRare', 'megaIllustrationRare'];
+  if (rarity && highRarities.includes(rarity)) {
+    if (prices.holofoil) return 'holofoil';
+  }
+
+  // For common/uncommon, prefer normal
+  if (rarity === 'common' || rarity === 'uncommon') {
+    if (prices.normal) return 'normal';
+    if (prices.reverseHolofoil) return 'reverseHolofoil';
+  }
+
+  // General preference order
+  const preferenceOrder = ['holofoil', 'normal', 'reverseHolofoil', '1stEditionHolofoil', 'unlimitedHolofoil'];
+  for (const v of preferenceOrder) {
+    if (prices[v]?.market || prices[v]?.mid) return v;
+  }
+
+  // Fallback: first variant with a market price
+  return variants.find(v => prices[v]?.market || prices[v]?.mid) || variants[0];
 }
 
 export { POKEMON_SETS, CARD_TYPES, KNOWN_POKEMON_NAMES, KNOWN_TRAINER_CARDS, ALL_KNOWN_CARDS };

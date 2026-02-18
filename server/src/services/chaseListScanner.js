@@ -23,7 +23,7 @@ export async function scanChaseList(chaseList) {
     return { scanned: 0, dealsFound: 0, cards: [] };
   }
 
-  console.log(`[ChaseScanner] Scanning ${neededCards.length} cards for "${chaseList.setName}"`);
+  console.log(`[ChaseScanner] Scanning ${neededCards.length} cards for set "${chaseList.setCode}"`);
 
   const alertMinPercent = Number(chaseList.alertMinPercent) || 10;
   const alertMaxPrice = chaseList.alertMaxPrice ? Number(chaseList.alertMaxPrice) : null;
@@ -39,7 +39,7 @@ export async function scanChaseList(chaseList) {
     }
 
     try {
-      const result = await scanSingleCard(chaseCard, chaseList.setName, alertMinPercent, alertMaxPrice);
+      const result = await scanSingleCard(chaseCard, chaseList.setCode, alertMinPercent, alertMaxPrice);
       cardResults.push(result);
       if (result.dealFound) dealsFound++;
     } catch (error) {
@@ -63,7 +63,7 @@ export async function scanChaseList(chaseList) {
     data: { lastScannedAt: new Date() }
   });
 
-  console.log(`[ChaseScanner] Scan complete for "${chaseList.setName}": ${dealsFound} deals found`);
+  console.log(`[ChaseScanner] Scan complete for set "${chaseList.setCode}": ${dealsFound} deals found`);
 
   return { scanned: neededCards.length, dealsFound, cards: cardResults };
 }
@@ -71,14 +71,14 @@ export async function scanChaseList(chaseList) {
 /**
  * Scan a single chase card for the best deal.
  */
-async function scanSingleCard(chaseCard, setName, alertMinPercent, alertMaxPrice) {
+async function scanSingleCard(chaseCard, setCode, alertMinPercent, alertMaxPrice) {
   const { setCard } = chaseCard;
   const searchQuery = `${setCard.cardName} ${setCard.cardNumber}`;
 
   // Search eBay
   const listings = await searchListings({
     cardName: searchQuery,
-    set: setName
+    set: setCode
   });
 
   if (listings.length === 0) {

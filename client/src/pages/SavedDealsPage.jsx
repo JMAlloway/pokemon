@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import useSavedDealsStore from '../store/savedDealsStore';
+import usePortfolioStore from '../store/portfolioStore';
 import DealScoreBadge from '../components/DealScoreBadge';
 import TypoBadge from '../components/TypoBadge';
 import ListingDetail from '../components/ListingDetail';
 
 export default function SavedDealsPage() {
   const { deals, notifications, isLoading, error, fetchDeals, removeDeal } = useSavedDealsStore();
+  const { markAsPurchased } = usePortfolioStore();
   const [sortBy, setSortBy] = useState('savedAt');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [purchaseInput, setPurchaseInput] = useState(null);
   const [statusFilter, setStatusFilter] = useState('active');
   const [expandedDeal, setExpandedDeal] = useState(null);
   const [removeConfirm, setRemoveConfirm] = useState(null);
@@ -33,12 +36,12 @@ export default function SavedDealsPage() {
     }
   };
 
-  const activeDeals = deals.filter(d => d.status === 'active' || statusFilter === 'all');
+  const activeDeals = deals.filter(d => statusFilter === 'all' || d.status === statusFilter);
   const priceDrops = activeDeals.filter(d => d.priceChangePercent && Number(d.priceChangePercent) < 0).length;
   const priceIncreases = activeDeals.filter(d => d.priceChangePercent && Number(d.priceChangePercent) > 0).length;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-text-primary">Saved Deals</h2>
         <p className="text-sm text-text-secondary mt-0.5">
@@ -118,9 +121,14 @@ export default function SavedDealsPage() {
       {isLoading && deals.length === 0 ? (
         <div className="text-center py-16 text-text-muted text-sm">Loading saved deals...</div>
       ) : activeDeals.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-text-muted text-sm">No active saved deals.</p>
-          <p className="text-xs text-text-muted mt-1">Run a new search to find deals.</p>
+        <div className="text-center py-16 animate-[fadeInUp_300ms_ease-out]">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
+            <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+            </svg>
+          </div>
+          <p className="text-text-secondary font-medium">No saved deals yet.</p>
+          <p className="text-xs text-text-muted mt-2">Save deals from search results to track their prices here.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -206,6 +214,31 @@ export default function SavedDealsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        {purchaseInput === deal.id ? (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              const price = e.target.elements.price.value;
+                              if (price) {
+                                await markAsPurchased(deal.id, Number(price));
+                                setPurchaseInput(null);
+                                fetchDeals(sortBy, sortOrder, statusFilter);
+                              }
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            <input name="price" type="number" step="0.01" min="0" defaultValue={Number(deal.priceAtSave).toFixed(2)} className="text-xs bg-bg-tertiary border border-accent rounded px-2 py-1 w-20 text-text-primary outline-none" autoFocus />
+                            <button type="submit" className="text-xs px-2 py-1 rounded-md bg-deal-green/15 text-deal-green font-medium">Save</button>
+                            <button type="button" onClick={() => setPurchaseInput(null)} className="text-xs px-1.5 py-1 text-text-muted">X</button>
+                          </form>
+                        ) : (
+                          <button
+                            onClick={() => setPurchaseInput(deal.id)}
+                            className="text-xs px-2.5 py-1 rounded-md bg-deal-green/15 text-deal-green hover:bg-deal-green/25 transition-colors font-medium"
+                          >
+                            Mark Purchased
+                          </button>
+                        )}
                         <button
                           onClick={() => setExpandedDeal(deal)}
                           className="text-xs px-2.5 py-1 rounded-md bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors"
@@ -254,8 +287,8 @@ export default function SavedDealsPage() {
       {/* Remove confirmation */}
       {removeConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setRemoveConfirm(null)} />
-          <div className="relative bg-bg-secondary border border-border rounded-xl p-6 max-w-sm w-full">
+          <div className="absolute inset-0 bg-black/60 animate-[fadeIn_150ms_ease-out]" onClick={() => setRemoveConfirm(null)} />
+          <div className="relative bg-bg-secondary border border-border rounded-xl p-6 max-w-sm w-full mx-4 animate-[scaleIn_200ms_ease-out]">
             <h3 className="text-lg font-bold text-text-primary mb-2">Remove from saved deals?</h3>
             <p className="text-sm text-text-secondary mb-4">
               This deal will be removed from your saved deals list.

@@ -53,7 +53,7 @@ router.post('/deletion', async (req, res) => {
     res.status(200).json({ status: 'acknowledged' });
   } catch (error) {
     console.error('[eBay Notifications] Error processing deletion:', error.message);
-    res.status(200).json({ status: 'acknowledged' });
+    res.status(500).json({ error: 'Internal error processing notification' });
   }
 });
 

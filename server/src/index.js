@@ -13,12 +13,22 @@ import savedSearchRoutes from './routes/savedSearches.js';
 import savedDealRoutes from './routes/savedDeals.js';
 import listingRoutes from './routes/listings.js';
 import chaseListRoutes from './routes/chaseLists.js';
+import snipeWatchlistRoutes from './routes/snipeWatchlist.js';
+import sellerRoutes from './routes/sellers.js';
+import marketAlertRoutes from './routes/marketAlerts.js';
+import setRoutes from './routes/sets.js';
+import snipeAlertRoutes from './routes/snipeAlerts.js';
+import portfolioRoutes from './routes/portfolio.js';
+import notificationSettingsRoutes from './routes/notificationSettings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Trust first proxy (fixes express-rate-limit X-Forwarded-For warning)
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet({
@@ -62,24 +72,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve static frontend in production
-const clientDistPath = path.join(__dirname, '../../client/dist');
-app.use(express.static(clientDistPath));
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
-    if (err) {
-      res.status(404).json({ error: 'Not found' });
-    }
-  });
-});
-
-// Error handling
-app.use((err, req, res, _next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
 // Ensure a default user exists (single-user app, no login required)
 async function ensureDefaultUser() {
   let user = await prisma.user.findFirst();
@@ -116,6 +108,31 @@ async function start() {
     app.use('/api/saved-deals', savedDealRoutes);
     app.use('/api/listings', listingRoutes);
     app.use('/api/chase-lists', chaseListRoutes);
+    app.use('/api/snipe-watchlist', snipeWatchlistRoutes);
+    app.use('/api/sellers', sellerRoutes);
+    app.use('/api/market-alerts', marketAlertRoutes);
+    app.use('/api/sets', setRoutes);
+    app.use('/api/snipe-alerts', snipeAlertRoutes);
+    app.use('/api/portfolio', portfolioRoutes);
+    app.use('/api/notification-settings', notificationSettingsRoutes);
+
+    // Serve static frontend in production (after API routes so they take priority)
+    const clientDistPath = path.join(__dirname, '../../client/dist');
+    app.use(express.static(clientDistPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+        if (err) {
+          res.status(404).json({ error: 'Not found' });
+        }
+      });
+    });
+
+    // Error handling (must be after all routes to catch their errors)
+    app.use((err, req, res, _next) => {
+      console.error('Unhandled error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    });
 
     // Initialize background jobs
     initializeBackgroundJobs();

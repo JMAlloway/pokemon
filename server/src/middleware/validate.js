@@ -1,4 +1,4 @@
-const RARITY_VALUES = ['common', 'uncommon', 'rare', 'holoRare', 'other'];
+const RARITY_VALUES = ['common', 'uncommon', 'rare', 'holoRare', 'ultraRare', 'illustrationRare', 'specialIllustrationRare', 'megaIllustrationRare', 'other'];
 const CONDITION_VALUES = ['mint', 'nearMint', 'excellent', 'good', 'fair', 'poor'];
 const FREQUENCY_VALUES = ['manual', 'hourly', 'fourHourly', 'daily', 'weekly'];
 const GRADED_VALUES = ['yes', 'no'];
