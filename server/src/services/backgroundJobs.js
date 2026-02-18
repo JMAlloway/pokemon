@@ -957,17 +957,19 @@ async function processAlert(alert) {
 
   console.log(`[AlertChecker] Alert "${alert.name}": sending ${liveListings.length} listings with live prices`);
 
-  // Format for email with live data
+  // Format for email with live data — recalculate gap from live price
   const emailListings = liveListings.map(l => {
     const hoursRemaining = l.auctionEndDate
       ? (new Date(l.auctionEndDate) - Date.now()) / (1000 * 60 * 60)
       : null;
+    const livePrice = Number(l.currentBidPrice || l.currentPrice);
+    const marketPrice = l.recentSoldPrice ? Number(l.recentSoldPrice) : null;
     return {
       cardName: l.cardName,
       listingTitle: l.listingTitle,
-      price: Number(l.currentBidPrice || l.currentPrice),
-      marketPrice: l.recentSoldPrice ? Number(l.recentSoldPrice) : null,
-      priceGapPercent: l.priceGapPercent ? Number(l.priceGapPercent) : null,
+      price: livePrice,
+      marketPrice,
+      priceGapPercent: calculatePriceGap(marketPrice, livePrice),
       dealScore: l.dealScore,
       listingUrl: l.listingUrl,
       hoursRemaining: hoursRemaining != null ? Math.round(hoursRemaining * 10) / 10 : null,
@@ -978,18 +980,18 @@ async function processAlert(alert) {
   // Send notifications (email + Discord + Telegram)
   const emailSent = await sendAlertNotifications({ alert, listings: emailListings });
 
-  // Record alert history with live prices
-  for (const l of liveListings) {
+  // Record alert history with live prices and recalculated gap
+  for (const el of emailListings) {
     await prisma.alertHistory.create({
       data: {
         snipeAlertId: alert.id,
-        ebayListingId: l.ebayListingId,
-        cardName: l.cardName,
-        listingTitle: l.listingTitle,
-        price: l.currentBidPrice || l.currentPrice,
-        marketPrice: l.recentSoldPrice,
-        priceGapPercent: l.priceGapPercent,
-        listingUrl: l.listingUrl,
+        ebayListingId: liveListings.find(l => l.listingUrl === el.listingUrl)?.ebayListingId || 'unknown',
+        cardName: el.cardName,
+        listingTitle: el.listingTitle,
+        price: el.price,
+        marketPrice: el.marketPrice,
+        priceGapPercent: el.priceGapPercent,
+        listingUrl: el.listingUrl,
         emailSent
       }
     });

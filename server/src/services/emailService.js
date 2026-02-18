@@ -69,7 +69,8 @@ export async function sendSnipeAlertEmail({ alert, listings }) {
     : `💰 BIN Deal: ${listings.length} listing${listings.length > 1 ? 's' : ''} below target`;
 
   const listingRows = listings.map(l => {
-    const gap = l.priceGapPercent ? `${Number(l.priceGapPercent).toFixed(1)}% below market` : '';
+    const gapVal = l.priceGapPercent != null ? Number(l.priceGapPercent) : null;
+    const gap = gapVal != null && gapVal > 0 ? `${gapVal.toFixed(1)}% below market` : '';
     const timeInfo = l.hoursRemaining != null
       ? l.hoursRemaining < 1
         ? `${Math.round(l.hoursRemaining * 60)}m left`
