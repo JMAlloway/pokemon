@@ -959,6 +959,7 @@ async function processAlert(alert) {
   console.log(`[AlertChecker] Alert "${alert.name}": sending ${liveListings.length} listings with live prices`);
 
   // Format for email with live data — recalculate gap from live price
+  const minGap = alert.minPriceGapPercent != null ? Number(alert.minPriceGapPercent) : 0;
   const emailListings = liveListings.map(l => {
     const hoursRemaining = l.auctionEndDate
       ? (new Date(l.auctionEndDate) - Date.now()) / (1000 * 60 * 60)
@@ -976,7 +977,12 @@ async function processAlert(alert) {
       hoursRemaining: hoursRemaining != null ? Math.round(hoursRemaining * 10) / 10 : null,
       bidCount: l.bidCount
     };
-  });
+  }).filter(l => l.priceGapPercent != null && l.priceGapPercent >= minGap);
+
+  if (emailListings.length === 0) {
+    console.log(`[AlertChecker] Alert "${alert.name}": all matches below ${minGap}% gap after live price refresh`);
+    return;
+  }
 
   // Send notifications (email + Discord + Telegram)
   const emailSent = await sendAlertNotifications({ alert, listings: emailListings });
