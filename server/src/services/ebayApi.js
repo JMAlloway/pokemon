@@ -483,8 +483,13 @@ async function searchCompletedSoldItems({ cardName, set, days = 90 }) {
       return null;
     }
 
+    // Filter out graded/slabbed cards by title — the Finding API doesn't
+    // support aspect filters, so title matching is the only option.
+    const GRADED_PATTERN = /\b(PSA|CGC|BGS|SGC|AGS|ACE|GMA|MNT)\b|\bgrade[d]?\b|\bslab(bed)?\b/i;
+
     const soldListings = items
       .filter(item => item.sellingStatus?.[0]?.sellingState?.[0] === 'EndedWithSales')
+      .filter(item => !GRADED_PATTERN.test(item.title?.[0] || ''))
       .map(item => {
         const price = parseFloat(item.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ || 0);
         const shippingInfo = item.shippingInfo?.[0];

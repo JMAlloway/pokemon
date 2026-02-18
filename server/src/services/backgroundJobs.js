@@ -351,8 +351,8 @@ export async function executeSearch(searchQuery) {
           const { searchSoldListings } = await import('./ebayApi.js');
           const freshSold = await searchSoldListings({ cardName: searchQuery.cardName, set: searchQuery.set });
           if (freshSold.length > 0) {
-            // Clear old comps if they had poor quality or were estimates
-            if (soldData.length > 0 && (shippingCoverage < 0.5 || urlCoverage < 0.5 || isEstimateData)) {
+            // Replace stored comps with fresh filtered data
+            if (soldData.length > 0) {
               await prisma.recentSoldListing.deleteMany({
                 where: { cardName: searchQuery.cardName }
               });
