@@ -186,11 +186,14 @@ function PriceHistory({ cardHistory, onClose }) {
               connectNulls
             />
             {hasSoldData && (
-              <Scatter
+              <Line
+                type="monotone"
                 dataKey="sold"
                 name="Sold Price"
-                fill="#22c55e"
-                r={3}
+                stroke="#22c55e"
+                strokeWidth={2}
+                dot={{ fill: '#22c55e', r: 3 }}
+                connectNulls
               />
             )}
           </ComposedChart>
@@ -205,7 +208,7 @@ function PriceHistory({ cardHistory, onClose }) {
         </div>
         {hasSoldData && (
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 bg-[#22c55e] rounded-full" />
+            <div className="w-3 h-0.5 bg-[#22c55e] rounded" />
             <span className="text-[10px] text-text-muted">Actual Sold Prices</span>
           </div>
         )}
