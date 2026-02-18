@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '../db.js';
-import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShipping } from './ebayApi.js';
+import { searchListings, checkListingStatus, getRateLimitStatus, fillMissingShipping, refreshListingPrices } from './ebayApi.js';
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
 import { fetchTcgPlayerPrice } from './pokemonTcg.js';
@@ -905,10 +905,60 @@ async function processAlert(alert) {
   const newListings = listings.filter(l => !alertedIds.has(l.ebayListingId));
   if (newListings.length === 0) return;
 
-  console.log(`[AlertChecker] Alert "${alert.name}": ${newListings.length} new matches`);
+  console.log(`[AlertChecker] Alert "${alert.name}": ${newListings.length} new matches, refreshing prices...`);
 
-  // Format for email
-  const emailListings = newListings.map(l => {
+  // Refresh live prices/bids from eBay before alerting
+  const liveData = await refreshListingPrices(newListings.map(l => l.ebayListingId));
+
+  // Update DB records and filter out sold/ended listings
+  const liveListings = [];
+  for (const l of newListings) {
+    const live = liveData.get(l.ebayListingId);
+    if (live) {
+      // Update DB with fresh data
+      const updateData = {
+        currentPrice: live.currentPrice,
+        lastCheckedAt: new Date()
+      };
+      if (live.currentBidPrice != null) updateData.currentBidPrice = live.currentBidPrice;
+      if (live.bidCount != null) updateData.bidCount = live.bidCount;
+      if (live.auctionEndDate) updateData.auctionEndDate = live.auctionEndDate;
+      if (!live.listingActive) updateData.listingStatus = 'sold';
+
+      await prisma.ebayListing.update({
+        where: { id: l.id },
+        data: updateData
+      });
+
+      // Skip sold/ended listings
+      if (!live.listingActive) {
+        console.log(`[AlertChecker] Skipping "${l.cardName}" — listing ended/sold`);
+        continue;
+      }
+
+      // Use live price data
+      liveListings.push({
+        ...l,
+        currentPrice: live.currentPrice,
+        currentBidPrice: live.currentBidPrice ?? l.currentBidPrice,
+        bidCount: live.bidCount ?? l.bidCount,
+        auctionEndDate: live.auctionEndDate || l.auctionEndDate
+      });
+    } else {
+      // API didn't return data — use DB values as fallback
+      liveListings.push(l);
+    }
+  }
+
+  if (liveListings.length === 0) {
+    console.log(`[AlertChecker] Alert "${alert.name}": all matches ended/sold after price refresh`);
+    return;
+  }
+
+  console.log(`[AlertChecker] Alert "${alert.name}": sending ${liveListings.length} listings with live prices`);
+
+  // Format for email with live data
+  const emailListings = liveListings.map(l => {
     const hoursRemaining = l.auctionEndDate
       ? (new Date(l.auctionEndDate) - Date.now()) / (1000 * 60 * 60)
       : null;
@@ -928,8 +978,8 @@ async function processAlert(alert) {
   // Send notifications (email + Discord + Telegram)
   const emailSent = await sendAlertNotifications({ alert, listings: emailListings });
 
-  // Record alert history
-  for (const l of newListings) {
+  // Record alert history with live prices
+  for (const l of liveListings) {
     await prisma.alertHistory.create({
       data: {
         snipeAlertId: alert.id,

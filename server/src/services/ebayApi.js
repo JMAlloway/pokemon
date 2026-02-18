@@ -784,6 +784,57 @@ export async function fillMissingShipping(listings) {
 }
 
 /**
+ * Refresh live price/bid/status data for a batch of listings from the eBay API.
+ * Used by the alert checker to ensure alert emails contain up-to-date info.
+ *
+ * @param {string[]} itemIds - Array of eBay item IDs
+ * @returns {Map<string, { currentPrice, currentBidPrice, bidCount, auctionEndDate, listingActive }>}
+ */
+export async function refreshListingPrices(itemIds) {
+  const results = new Map();
+  const realIds = itemIds.filter(id => !id.startsWith('ebay_'));
+  if (realIds.length === 0) return results;
+
+  const CONCURRENCY = 5;
+
+  for (let i = 0; i < realIds.length; i += CONCURRENCY) {
+    const batch = realIds.slice(i, i + CONCURRENCY);
+
+    const settled = await Promise.allSettled(
+      batch.map(itemId =>
+        withRetry(
+          () => ebayFetch(`/buy/browse/v1/item/${encodeURIComponent(itemId)}`),
+          2
+        ).then(data => {
+          if (!data) return;
+          results.set(data.itemId, {
+            currentPrice: parseFloat(data.price?.value || 0),
+            currentBidPrice: data.currentBidPrice ? parseFloat(data.currentBidPrice.value) : null,
+            bidCount: data.bidCount ?? null,
+            auctionEndDate: data.itemEndDate ? new Date(data.itemEndDate) : null,
+            listingActive: !data.itemEndDate || new Date(data.itemEndDate) > new Date()
+          });
+        })
+      )
+    );
+
+    // Stop if rate limited
+    const rateLimited = settled.find(r => r.status === 'rejected' && r.reason?.statusCode === 429);
+    if (rateLimited) {
+      console.warn(`[eBay API] Rate limited during price refresh, got ${results.size}/${realIds.length}`);
+      break;
+    }
+
+    if (i + CONCURRENCY < realIds.length) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
+  console.log(`[eBay API] Refreshed prices for ${results.size}/${realIds.length} listings`);
+  return results;
+}
+
+/**
  * Get details for a specific eBay listing.
  */
 export async function getListingDetails(itemId) {
