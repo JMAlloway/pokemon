@@ -81,6 +81,16 @@ export function initializeBackgroundJobs() {
     monitorSavedDeals();
   });
 
+  // Chase list scan: every 15 minutes
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const { scanAllChaseLists } = await import('./chaseListScanner.js');
+      await scanAllChaseLists();
+    } catch (error) {
+      console.error('[BackgroundJobs] Chase list scan error:', error.message);
+    }
+  });
+
   console.log('[BackgroundJobs] Scheduled jobs initialized');
 }
 

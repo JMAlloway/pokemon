@@ -12,6 +12,7 @@ import searchRoutes from './routes/search.js';
 import savedSearchRoutes from './routes/savedSearches.js';
 import savedDealRoutes from './routes/savedDeals.js';
 import listingRoutes from './routes/listings.js';
+import chaseListRoutes from './routes/chaseLists.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -114,6 +115,7 @@ async function start() {
     app.use('/api/saved-searches', savedSearchRoutes);
     app.use('/api/saved-deals', savedDealRoutes);
     app.use('/api/listings', listingRoutes);
+    app.use('/api/chase-lists', chaseListRoutes);
 
     // Initialize background jobs
     initializeBackgroundJobs();

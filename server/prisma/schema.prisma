@@ -16,6 +16,7 @@ model User {
   lastActiveAt DateTime       @default(now())
   savedListings SavedListing[]
   searchQueries SearchQuery[]
+  chaseLists    ChaseList[]
 }
 
 model SearchQuery {
@@ -142,6 +143,67 @@ model BackgroundJobLog {
   @@index([status])
 }
 
+model SetCard {
+  id            String          @id @default(uuid()) @db.Uuid
+  setName       String          @db.VarChar(100)
+  cardNumber    String          @db.VarChar(20)
+  cardName      String          @db.VarChar(255)
+  rarity        String?         @db.VarChar(50)
+  cardType      String?         @db.VarChar(50)
+  imageUrl      String?
+  marketPrice   Decimal?        @db.Decimal(10, 2)
+  lastPriceUpdate DateTime?
+  createdAt     DateTime        @default(now())
+  chaseListCards ChaseListCard[]
+
+  @@unique([setName, cardNumber])
+  @@index([setName])
+}
+
+model ChaseList {
+  id                    String          @id @default(uuid()) @db.Uuid
+  userId                String          @db.Uuid
+  setName               String          @db.VarChar(100)
+  alertMinPercent       Decimal         @default(10) @db.Decimal(5, 2)
+  alertMaxPrice         Decimal?        @db.Decimal(10, 2)
+  alertCooldownMinutes  Int             @default(60)
+  scanEnabled           Boolean         @default(true)
+  lastScannedAt         DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards                 ChaseListCard[]
+
+  @@unique([userId, setName])
+  @@index([userId])
+  @@index([scanEnabled])
+}
+
+model ChaseListCard {
+  id             String          @id @default(uuid()) @db.Uuid
+  chaseListId    String          @db.Uuid
+  setCardId      String          @db.Uuid
+  status         ChaseCardStatus @default(needed)
+  maxPriceOverride Decimal?      @db.Decimal(10, 2)
+  bestDealUrl    String?
+  bestDealPrice  Decimal?        @db.Decimal(10, 2)
+  bestDealScore  Int?            @db.SmallInt
+  lastAlertedAt  DateTime?
+  addedAt        DateTime        @default(now())
+  chaseList      ChaseList       @relation(fields: [chaseListId], references: [id], onDelete: Cascade)
+  setCard        SetCard         @relation(fields: [setCardId], references: [id], onDelete: Cascade)
+
+  @@unique([chaseListId, setCardId])
+  @@index([chaseListId])
+  @@index([status])
+}
+
+enum ChaseCardStatus {
+  needed
+  dealFound
+  purchased
+}
+
 enum Rarity {
   common
   uncommon
@@ -189,6 +251,7 @@ enum JobType {
   eBaySearch
   PriceBaseline
   SavedDealsMonitoring
+  ChaseListScan
 }
 
 enum JobStatus {
