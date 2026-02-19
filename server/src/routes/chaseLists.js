@@ -316,7 +316,7 @@ router.post('/:id/scan', async (req, res) => {
       where: { id, userId: req.userId },
       include: {
         cards: {
-          where: { status: 'needed' },
+          where: { status: { in: ['needed', 'dealFound'] } },
           include: { setCard: true }
         }
       }

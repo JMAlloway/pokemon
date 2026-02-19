@@ -18,13 +18,13 @@ import { sendChaseListAlertEmail } from './emailService.js';
  */
 export async function scanChaseList(chaseList) {
   const cards = chaseList.cards || [];
-  const neededCards = cards.filter(c => c.status === 'needed');
+  const scannable = cards.filter(c => c.status === 'needed' || c.status === 'dealFound');
 
-  if (neededCards.length === 0) {
+  if (scannable.length === 0) {
     return { scanned: 0, dealsFound: 0, cards: [] };
   }
 
-  console.log(`[ChaseScanner] Scanning ${neededCards.length} cards for set "${chaseList.setCode}"`);
+  console.log(`[ChaseScanner] Scanning ${scannable.length} cards for set "${chaseList.setCode}"`);
 
   const alertMinPercent = Number(chaseList.alertMinPercent) || 10;
   const alertMaxPrice = chaseList.alertMaxPrice ? Number(chaseList.alertMaxPrice) : null;
@@ -32,7 +32,7 @@ export async function scanChaseList(chaseList) {
   let dealsFound = 0;
   const cardResults = [];
 
-  for (const chaseCard of neededCards) {
+  for (const chaseCard of scannable) {
     const rl = getRateLimitStatus();
     if (rl.isLimited) {
       console.log(`[ChaseScanner] Rate limited, pausing scan`);
@@ -72,7 +72,7 @@ export async function scanChaseList(chaseList) {
     const now = Date.now();
     const alertableDeals = cardResults.filter(r => {
       if (!r.dealFound || !r.bestDeal) return false;
-      const card = neededCards.find(c => c.id === r.chaseListCardId);
+      const card = scannable.find(c => c.id === r.chaseListCardId);
       if (card?.lastAlertedAt && (now - new Date(card.lastAlertedAt).getTime()) < cooldownMs) return false;
       return true;
     });
@@ -102,7 +102,7 @@ export async function scanChaseList(chaseList) {
     }
   }
 
-  return { scanned: neededCards.length, dealsFound, cards: cardResults };
+  return { scanned: scannable.length, dealsFound, cards: cardResults };
 }
 
 /**
@@ -324,7 +324,7 @@ export async function scanAllChaseLists() {
       where: { scanEnabled: true },
       include: {
         cards: {
-          where: { status: 'needed' },
+          where: { status: { in: ['needed', 'dealFound'] } },
           include: { setCard: true }
         }
       }
