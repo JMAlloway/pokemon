@@ -514,6 +514,20 @@ export default function ChaseListPage() {
 }
 
 /**
+ * Format a time remaining string from an end date.
+ */
+function formatTimeRemaining(endTime) {
+  if (!endTime) return null;
+  const ms = new Date(endTime).getTime() - Date.now();
+  if (ms <= 0) return 'Ended';
+  const hours = ms / (1000 * 60 * 60);
+  if (hours < 1) return `${Math.round(hours * 60)}m left`;
+  if (hours < 24) return `${Math.round(hours)}h left`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${Math.round(hours % 24)}h left`;
+}
+
+/**
  * Single chase card row showing card info, deal, and status controls.
  */
 function ChaseCardRow({ card, onStatusChange }) {
@@ -524,6 +538,9 @@ function ChaseCardRow({ card, onStatusChange }) {
   const dealPercent = marketPrice && dealPrice
     ? Math.round(((marketPrice - dealPrice) / marketPrice) * 100)
     : null;
+
+  const isAuction = card.bestDealBuyingOption === 'AUCTION';
+  const timeRemaining = isAuction ? formatTimeRemaining(card.bestDealEndTime) : null;
 
   return (
     <div className={`bg-bg-card border rounded-lg p-4 flex items-center gap-4 ${
@@ -558,30 +575,81 @@ function ChaseCardRow({ card, onStatusChange }) {
 
         {/* Deal info */}
         {hasDeal && (
-          <div className="flex items-center gap-2 mt-1">
+          <div className="mt-1.5 space-y-1">
+            {/* Price line */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-deal-green">${dealPrice.toFixed(2)}</span>
+              {dealPercent !== null && dealPercent > 0 && (
+                <span className="text-xs font-medium text-deal-green">
+                  {dealPercent}% below
+                </span>
+              )}
+              {card.bestDealScore != null && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                  card.bestDealScore >= 60 ? 'bg-deal-green/15 text-deal-green'
+                    : card.bestDealScore >= 30 ? 'bg-typo-amber/15 text-typo-amber'
+                      : 'bg-bg-tertiary text-text-muted'
+                }`}>
+                  {card.bestDealScore}
+                </span>
+              )}
+            </div>
+
+            {/* Context badges */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Listing type */}
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                isAuction
+                  ? 'bg-typo-amber/15 text-typo-amber'
+                  : 'bg-accent/15 text-accent'
+              }`}>
+                {isAuction ? 'Auction' : 'BIN'}
+              </span>
+
+              {/* Time remaining for auctions */}
+              {isAuction && timeRemaining && (
+                <span className="text-[10px] text-text-secondary">
+                  {timeRemaining}
+                </span>
+              )}
+
+              {/* Bid count for auctions */}
+              {isAuction && card.bestDealBidCount != null && (
+                <span className="text-[10px] text-text-muted">
+                  {card.bestDealBidCount} bid{card.bestDealBidCount !== 1 ? 's' : ''}
+                </span>
+              )}
+
+              {/* Seller */}
+              {card.bestDealSellerName && (
+                <span className="text-[10px] text-text-muted" title={`Seller: ${card.bestDealSellerName}`}>
+                  {card.bestDealSellerFeedback != null
+                    ? `${card.bestDealSellerName} (${Number(card.bestDealSellerFeedback).toFixed(1)}%)`
+                    : card.bestDealSellerName}
+                </span>
+              )}
+
+              {/* Typo warning */}
+              {card.bestDealHasTypo && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-typo-amber/15 text-typo-amber" title="Listing title may contain a typo — could be mispriced">
+                  Typo?
+                </span>
+              )}
+            </div>
+
+            {/* eBay link */}
             <a
               href={card.bestDealUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-accent hover:text-accent-hover transition-colors"
+              className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors font-medium"
               onClick={(e) => e.stopPropagation()}
             >
-              Best deal: ${dealPrice.toFixed(2)}
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View on eBay
             </a>
-            {dealPercent !== null && dealPercent > 0 && (
-              <span className="text-xs font-medium text-deal-green">
-                {dealPercent}% below market
-              </span>
-            )}
-            {card.bestDealScore && (
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                card.bestDealScore >= 60 ? 'bg-deal-green/15 text-deal-green'
-                  : card.bestDealScore >= 30 ? 'bg-typo-amber/15 text-typo-amber'
-                    : 'bg-bg-tertiary text-text-muted'
-              }`}>
-                {card.bestDealScore}
-              </span>
-            )}
           </div>
         )}
       </div>

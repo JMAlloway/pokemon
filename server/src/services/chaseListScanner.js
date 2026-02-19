@@ -2,6 +2,7 @@ import prisma from '../db.js';
 import { searchListings, getRateLimitStatus, fillMissingShipping } from './ebayApi.js';
 import { batchAnalyzeTitles } from './typoDetection.js';
 import { calculateRecencyWeightedBaseline, calculatePriceGap, calculateDealScore } from './dealScoring.js';
+import { sendChaseListAlertEmail } from './emailService.js';
 
 /**
  * Chase List Scanner
@@ -64,6 +65,42 @@ export async function scanChaseList(chaseList) {
   });
 
   console.log(`[ChaseScanner] Scan complete for set "${chaseList.setCode}": ${dealsFound} deals found`);
+
+  // Send email notification for new deals
+  if (dealsFound > 0) {
+    const cooldownMs = (chaseList.alertCooldownMinutes || 60) * 60 * 1000;
+    const now = Date.now();
+    const alertableDeals = cardResults.filter(r => {
+      if (!r.dealFound || !r.bestDeal) return false;
+      const card = neededCards.find(c => c.id === r.chaseListCardId);
+      if (card?.lastAlertedAt && (now - new Date(card.lastAlertedAt).getTime()) < cooldownMs) return false;
+      return true;
+    });
+
+    if (alertableDeals.length > 0) {
+      try {
+        await sendChaseListAlertEmail({
+          chaseList,
+          deals: alertableDeals.map(d => ({
+            cardName: d.cardName,
+            cardNumber: d.cardNumber,
+            ...d.bestDeal,
+            marketPrice: d.marketPrice
+          }))
+        });
+
+        // Update lastAlertedAt for alerted cards
+        await Promise.all(alertableDeals.map(d =>
+          prisma.chaseListCard.update({
+            where: { id: d.chaseListCardId },
+            data: { lastAlertedAt: new Date() }
+          })
+        ));
+      } catch (err) {
+        console.error(`[ChaseScanner] Failed to send alert email:`, err.message);
+      }
+    }
+  }
 
   return { scanned: neededCards.length, dealsFound, cards: cardResults };
 }
@@ -155,7 +192,11 @@ async function scanSingleCard(chaseCard, setCode, alertMinPercent, alertMaxPrice
         priceGapPercent,
         title: listing.listingTitle,
         hasTypo: listing.hasTypo,
-        buyingOption: listing.buyingOption
+        buyingOption: listing.buyingOption,
+        bidCount: listing.bidCount,
+        auctionEndDate: listing.auctionEndDate,
+        sellerName: listing.sellerName,
+        sellerFeedbackPercent: listing.sellerFeedbackPercent
       };
     }
   }
@@ -191,6 +232,10 @@ async function scanSingleCard(chaseCard, setCode, alertMinPercent, alertMaxPrice
           title: listing.listingTitle,
           hasTypo: listing.hasTypo,
           buyingOption: listing.buyingOption,
+          bidCount: listing.bidCount,
+          auctionEndDate: listing.auctionEndDate,
+          sellerName: listing.sellerName,
+          sellerFeedbackPercent: listing.sellerFeedbackPercent,
           belowThreshold: true
         };
       }
@@ -201,7 +246,14 @@ async function scanSingleCard(chaseCard, setCode, alertMinPercent, alertMaxPrice
   const updateData = {
     bestDealUrl: bestDeal?.url || null,
     bestDealPrice: bestDeal?.price || null,
-    bestDealScore: bestDeal?.dealScore || null
+    bestDealScore: bestDeal?.dealScore || null,
+    bestDealTitle: bestDeal?.title || null,
+    bestDealBuyingOption: bestDeal?.buyingOption || null,
+    bestDealBidCount: bestDeal?.bidCount ?? null,
+    bestDealEndTime: bestDeal?.auctionEndDate || null,
+    bestDealSellerName: bestDeal?.sellerName || null,
+    bestDealSellerFeedback: bestDeal?.sellerFeedbackPercent ?? null,
+    bestDealHasTypo: bestDeal?.hasTypo ?? null
   };
 
   // If deal meets threshold, mark as dealFound

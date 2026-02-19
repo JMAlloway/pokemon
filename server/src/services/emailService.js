@@ -128,3 +128,101 @@ export async function sendSnipeAlertEmail({ alert, listings }) {
     return false;
   }
 }
+
+/**
+ * Send a chase list deal alert email.
+ *
+ * @param {{ chaseList: object, deals: Array<{ cardName, cardNumber, url, price, marketPrice, priceGapPercent, dealScore, title, buyingOption, bidCount?, auctionEndDate?, sellerName?, sellerFeedbackPercent?, hasTypo? }> }} params
+ */
+export async function sendChaseListAlertEmail({ chaseList, deals }) {
+  const to = process.env.ALERT_EMAIL;
+  const from = process.env.SMTP_FROM || 'PokeArb <alerts@pokearb.local>';
+
+  if (!to) {
+    console.log(`[Email] No ALERT_EMAIL configured — skipping chase list alert for "${chaseList.setCode}"`);
+    return false;
+  }
+
+  const transport = getTransporter();
+  if (!transport) {
+    console.log(`[Email] SMTP not configured — logging chase list deals for "${chaseList.setCode}":`);
+    for (const d of deals) {
+      const gap = d.priceGapPercent ? `${Number(d.priceGapPercent).toFixed(1)}% below` : 'N/A';
+      console.log(`  → ${d.cardName} #${d.cardNumber}: $${Number(d.price).toFixed(2)} (${gap}) — ${d.url}`);
+    }
+    return false;
+  }
+
+  const subject = `🎯 Chase List: ${deals.length} deal${deals.length > 1 ? 's' : ''} found for ${chaseList.setCode}`;
+
+  const dealRows = deals.map(d => {
+    const gapVal = d.priceGapPercent != null ? Number(d.priceGapPercent) : null;
+    const gap = gapVal != null && gapVal > 0 ? `${gapVal.toFixed(1)}% below market` : '';
+    const isAuction = d.buyingOption === 'AUCTION';
+    const type = isAuction ? 'Auction' : 'BIN';
+    const hoursLeft = d.auctionEndDate
+      ? (new Date(d.auctionEndDate).getTime() - Date.now()) / (1000 * 60 * 60)
+      : null;
+    const timeInfo = hoursLeft != null && hoursLeft > 0
+      ? hoursLeft < 1
+        ? `${Math.round(hoursLeft * 60)}m left`
+        : `${Math.round(hoursLeft)}h left`
+      : '';
+    const bids = isAuction && d.bidCount != null ? `${d.bidCount} bids` : '';
+    const seller = d.sellerName
+      ? d.sellerFeedbackPercent != null
+        ? `${d.sellerName} (${Number(d.sellerFeedbackPercent).toFixed(1)}%)`
+        : d.sellerName
+      : '';
+    const typo = d.hasTypo ? 'Possible typo' : '';
+    const meta = [type, timeInfo, bids, seller, gap, typo].filter(Boolean).join(' · ');
+
+    return `
+      <tr style="border-bottom: 1px solid #2a2a3e;">
+        <td style="padding: 12px 8px;">
+          <div style="font-weight: 600; color: #e2e8f0;">${d.cardName} <span style="color: #64748b; font-weight: 400;">#${d.cardNumber}</span></div>
+          ${d.title ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">${d.title.substring(0, 80)}${d.title.length > 80 ? '...' : ''}</div>` : ''}
+          <div style="font-size: 11px; color: #6366f1; margin-top: 4px;">${meta}</div>
+        </td>
+        <td style="padding: 12px 8px; text-align: right; white-space: nowrap;">
+          <div style="font-weight: 700; font-size: 16px; color: #10b981;">$${Number(d.price).toFixed(2)}</div>
+          ${d.marketPrice ? `<div style="font-size: 11px; color: #64748b;">Market: $${Number(d.marketPrice).toFixed(2)}</div>` : ''}
+        </td>
+        <td style="padding: 12px 8px; text-align: center;">
+          <a href="${d.url}" style="display: inline-block; padding: 6px 14px; background: #6366f1; color: white; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 600;">View</a>
+        </td>
+      </tr>`;
+  }).join('');
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; background: #0f0f1a; color: #e2e8f0; border-radius: 12px; overflow: hidden;">
+      <div style="background: linear-gradient(135deg, #10b981, #059669); padding: 20px 24px;">
+        <h1 style="margin: 0; font-size: 18px; color: white;">Chase List: ${chaseList.setCode}</h1>
+        <p style="margin: 4px 0 0; font-size: 13px; color: rgba(255,255,255,0.8);">${deals.length} deal${deals.length > 1 ? 's' : ''} found below your ${Number(chaseList.alertMinPercent)}% threshold</p>
+      </div>
+      <div style="padding: 16px 24px;">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid #2a2a3e;">
+              <th style="text-align: left; padding: 8px; font-size: 11px; color: #64748b; text-transform: uppercase;">Card</th>
+              <th style="text-align: right; padding: 8px; font-size: 11px; color: #64748b; text-transform: uppercase;">Price</th>
+              <th style="padding: 8px;"></th>
+            </tr>
+          </thead>
+          <tbody>${dealRows}</tbody>
+        </table>
+      </div>
+      <div style="padding: 16px 24px; border-top: 1px solid #1e1e2e; text-align: center;">
+        <p style="font-size: 11px; color: #475569; margin: 0;">Sent by PokeArb · Cooldown: ${chaseList.alertCooldownMinutes}min</p>
+      </div>
+    </div>`;
+
+  try {
+    await transport.sendMail({ from, to, subject, html });
+    console.log(`[Email] Sent chase list alert for "${chaseList.setCode}" to ${to} (${deals.length} deals)`);
+    return true;
+  } catch (err) {
+    console.error(`[Email] Failed to send chase list alert for "${chaseList.setCode}":`, err.message);
+    return false;
+  }
+}

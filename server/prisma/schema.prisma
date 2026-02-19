@@ -241,18 +241,25 @@ model ChaseList {
 }
 
 model ChaseListCard {
-  id             String          @id @default(uuid()) @db.Uuid
-  chaseListId    String          @db.Uuid
-  setCardId      String          @db.Uuid
-  status         ChaseCardStatus @default(needed)
-  maxPriceOverride Decimal?      @db.Decimal(10, 2)
-  bestDealUrl    String?
-  bestDealPrice  Decimal?        @db.Decimal(10, 2)
-  bestDealScore  Int?            @db.SmallInt
-  lastAlertedAt  DateTime?
-  addedAt        DateTime        @default(now())
-  chaseList      ChaseList       @relation(fields: [chaseListId], references: [id], onDelete: Cascade)
-  setCard        SetCard         @relation(fields: [setCardId], references: [id], onDelete: Cascade)
+  id                      String          @id @default(uuid()) @db.Uuid
+  chaseListId             String          @db.Uuid
+  setCardId               String          @db.Uuid
+  status                  ChaseCardStatus @default(needed)
+  maxPriceOverride        Decimal?        @db.Decimal(10, 2)
+  bestDealUrl             String?
+  bestDealPrice           Decimal?        @db.Decimal(10, 2)
+  bestDealScore           Int?            @db.SmallInt
+  bestDealTitle           String?
+  bestDealBuyingOption    String?         @db.VarChar(20)
+  bestDealBidCount        Int?            @db.SmallInt
+  bestDealEndTime         DateTime?
+  bestDealSellerName      String?         @db.VarChar(100)
+  bestDealSellerFeedback  Decimal?        @db.Decimal(5, 2)
+  bestDealHasTypo         Boolean?
+  lastAlertedAt           DateTime?
+  addedAt                 DateTime        @default(now())
+  chaseList               ChaseList       @relation(fields: [chaseListId], references: [id], onDelete: Cascade)
+  setCard                 SetCard         @relation(fields: [setCardId], references: [id], onDelete: Cascade)
 
   @@unique([chaseListId, setCardId])
   @@index([chaseListId])
