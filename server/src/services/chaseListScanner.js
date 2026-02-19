@@ -128,8 +128,45 @@ async function scanSingleCard(chaseCard, setCode, alertMinPercent, alertMaxPrice
     };
   }
 
+  // Filter listings to exclude wrong cards from different sets.
+  // eBay titles typically include card numbers like "125/165", "#125", "No. 125".
+  // Strategy: if a title contains a "XXX/YYY" or "#XXX" pattern with a DIFFERENT
+  // number than ours, it's from the wrong set. Keep listings with no number or matching number.
+  const expectedNum = parseInt(setCard.cardNumber, 10);
+  const cardNumSlashPattern = /(\d{1,4})\s*\/\s*\d{1,4}/g; // "125/165"
+  const cardNumHashPattern = /#\s*(\d{1,4})\b/g;            // "#125"
+  const filteredListings = listings.filter(l => {
+    if (!l.listingTitle) return true;
+    const title = l.listingTitle;
+
+    // Check "XXX/YYY" patterns (most reliable — standard card number format)
+    const slashMatches = [...title.matchAll(cardNumSlashPattern)];
+    if (slashMatches.length > 0) {
+      return slashMatches.some(m => parseInt(m[1], 10) === expectedNum);
+    }
+
+    // Check "#XXX" patterns
+    const hashMatches = [...title.matchAll(cardNumHashPattern)];
+    if (hashMatches.length > 0) {
+      return hashMatches.some(m => parseInt(m[1], 10) === expectedNum);
+    }
+
+    // No card number found in title — keep (benefit of the doubt)
+    return true;
+  });
+
+  if (filteredListings.length === 0) {
+    return {
+      chaseListCardId: chaseCard.id,
+      cardName: setCard.cardName,
+      cardNumber: setCard.cardNumber,
+      dealFound: false,
+      listingsChecked: listings.length
+    };
+  }
+
   // Fill shipping
-  const withShipping = await fillMissingShipping(listings);
+  const withShipping = await fillMissingShipping(filteredListings);
 
   // Get sold data for baseline
   let soldData = [];
