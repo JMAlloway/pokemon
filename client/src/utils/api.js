@@ -6,10 +6,10 @@ class ApiError extends Error {
   }
 }
 
-async function request(method, url, body = null) {
+async function request(method, url, body = null, { timeoutMs = 35000 } = {}) {
   const headers = {};
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 35000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const config = { method, headers, signal: controller.signal };
   if (body) {
     headers['Content-Type'] = 'application/json';
@@ -34,10 +34,10 @@ async function request(method, url, body = null) {
 }
 
 export const api = {
-  get: (url) => request('GET', url),
-  post: (url, body) => request('POST', url, body),
-  put: (url, body) => request('PUT', url, body),
-  delete: (url, body) => request('DELETE', url, body)
+  get: (url, opts) => request('GET', url, null, opts),
+  post: (url, body, opts) => request('POST', url, body, opts),
+  put: (url, body, opts) => request('PUT', url, body, opts),
+  delete: (url, body, opts) => request('DELETE', url, body, opts)
 };
 
 export { ApiError };

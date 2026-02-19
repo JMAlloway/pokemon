@@ -167,7 +167,7 @@ const useChaseListStore = create((set, get) => ({
   scanChaseList: async (id) => {
     set({ isScanning: true, error: null });
     try {
-      const data = await api.post(`/api/chase-lists/${id}/scan`);
+      const data = await api.post(`/api/chase-lists/${id}/scan`, null, { timeoutMs: 120000 });
       // Refresh list to show updated deal info
       await get().fetchChaseList(id);
       set({ isScanning: false });
