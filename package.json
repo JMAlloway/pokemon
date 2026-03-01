@@ -15,6 +15,6 @@
     "setup": "npm install && cd server && npm install && cd ../client && npm install && cd ../server && npx prisma migrate deploy && npx prisma generate && node prisma/seed.js"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^9.2.1"
   }
 }
